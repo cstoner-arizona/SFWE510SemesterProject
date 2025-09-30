@@ -1,0 +1,39 @@
+services:
+  # --- DATABASE ---
+  spot-database-dev:
+    profiles: ["dev"]
+    image: postgres:latest
+    ports:
+    - "5432:5432"
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "spot_dev"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./data.sql:/docker-entrypoint-initdb.d/2-data.sql
+    networks:
+      backend:
+        aliases:
+        - "database"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- CONFIGURATION SERVER ---
+  configserver-dev:
+    profiles: ["dev"]
+    image: skate/configserver
+    ports:
+    - "8089:8089"
+    environment:
+      PORT: 8089
+      SPRING_PROFILES_ACTIVE: native
+      SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: classpath:/config/
+      ENCRYPT_KEY: "oK5wCXS4nADchiI9WEXYPdJrqeNhuzxeTFSwf1qo5ic=" # generated with: openssl rand -base64 32 TODO: move to .env file, then add to .gitignore
+    networks:
+      backend:
+        aliases:
+          - "configserver"
