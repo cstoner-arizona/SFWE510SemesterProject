@@ -7,13 +7,13 @@ spring:
     config:
       server:
         native:
-          search-locations: ${SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS:classpath:/config/}
+          search-locations: ${SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS:classpath:/config}
 
 server:
   port: ${PORT:8089}
 
 encrypt:
-  key: ${ENCRYPT_KEY}
+  key: ${ENCRYPT_KEY:oK5wCXS4nADchiI9WEXYPdJrqeNhuzxeTFSwf1qo5ic=}
 
 management:
   endpoints:
