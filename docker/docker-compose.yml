@@ -38,6 +38,24 @@ services:
         aliases:
           - "configserver"
 
+  # --- SPOT SERVICE ---
+  spot-service-dev:
+    profiles: ["dev"]
+    image: skate/spot-service:0.0.1-SNAPSHOT
+    pull_policy: never
+    ports:
+      - "8080:8080"
+    environment:
+      PROFILE: dev
+      CONFIGSERVER_URI: http://configserver:8089/
+    depends_on:
+      spot-database-dev:
+        condition: service_healthy
+      configserver-dev:
+        condition: service_started
+    networks:
+      - backend
+
 networks:
   backend:
     driver: bridge

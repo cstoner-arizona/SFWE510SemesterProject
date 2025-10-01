@@ -28,6 +28,9 @@ public class Spot extends RepresentationModel<Spot> {
     @Column(name = "name", nullable = false)
     private String name;
 
+    @Column(name = "founder_skater_id", nullable = false)
+    private String founderSkaterId;
+
     @Column(name = "address")
     private String address;
 
@@ -69,4 +72,14 @@ public class Spot extends RepresentationModel<Spot> {
 
     @OneToMany(mappedBy = "spot", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<TrickAttempt> trickAttempts = new ArrayList<>();
+
+    public void addTrickAttempt(TrickAttempt trickAttempt) {
+        trickAttempts.add(trickAttempt);
+        trickAttempt.setSpot(this);
+    }
+
+    public void removeTrickAttempt(TrickAttempt trickAttempt) {
+        trickAttempts.remove(trickAttempt);
+        trickAttempt.setSpot(null);
+    }
 }

@@ -10,5 +10,6 @@ public enum SpotType {
     BOWL,
     STREET_GAP,
     CURB,
-    TRANSITION
+    TRANSITION,
+    PARK
 }

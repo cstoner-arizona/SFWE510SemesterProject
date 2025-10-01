@@ -64,6 +64,10 @@
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>
@@ -99,7 +103,7 @@
                 <executions>
                     <execution>
                         <id>default</id>
-                        <phase>install</phase>
+<!--                        <phase>install</phase>-->
                         <goals>
                             <goal>build</goal>
                             <goal>push</goal>
