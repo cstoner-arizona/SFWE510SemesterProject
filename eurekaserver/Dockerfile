@@ -23,8 +23,6 @@ COPY --from=build ${DEPENDENCY}/META-INF /app/META-INF
 COPY --from=build ${DEPENDENCY}/BOOT-INF/classes /app
 
 ENTRYPOINT ["java",\
-  "--add-opens=java.base/java.nio.charset=ALL-UNNAMED",\
-  "--add-opens=java.base/java.lang=ALL-UNNAMED",\
   "-cp", "app:app/lib/*",\
-  "org.skate.spot.SpotServiceApplication"
+  "org.skate.eureka.EurekaServerApplication"
 ]

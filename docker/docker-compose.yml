@@ -38,6 +38,23 @@ services:
         aliases:
           - "configserver"
 
+
+  # --- EUREKA SERVER ---
+  eurekaserver:
+    image: skate/eurekaserver:0.0.1-SNAPSHOT
+    container-name: eureka-server
+    ports:
+      - "8070:8070"
+    depends_on:
+      database:
+        condition: service_healthy
+      configserver:
+        condition: service_started
+    networks:
+      backend:
+        aliases:
+          - "eurekaserver"
+
   # --- SPOT SERVICE ---
   spot-service-dev:
     profiles: ["dev"]

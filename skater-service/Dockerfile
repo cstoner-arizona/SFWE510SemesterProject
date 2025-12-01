@@ -26,5 +26,5 @@ ENTRYPOINT ["java",\
   "--add-opens=java.base/java.nio.charset=ALL-UNNAMED",\
   "--add-opens=java.base/java.lang=ALL-UNNAMED",\
   "-cp", "app:app/lib/*",\
-  "org.skate.spot.SpotServiceApplication"
+  "org.skate.skater.SkaterServiceApplication"
 ]
