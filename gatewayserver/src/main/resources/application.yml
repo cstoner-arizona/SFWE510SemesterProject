@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: gatewayserver
+  profiles:
+    active: ${PROFILE:dev}
+  config:
+    import: "optional:configserver:${CONFIGSERVER_URI:http://configserver:8089}"
+
+server:
+  port: ${PORT:8072}

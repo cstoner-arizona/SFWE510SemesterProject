@@ -114,6 +114,32 @@ services:
       retries: 5
       start_period: 30s
 
+  # --- GATEWAY SERVER ---
+  gatewayserver-dev:
+    profiles: ["dev"]
+    image: skate/gatewayserver:0.0.1-SNAPSHOT
+    ports:
+      - "8072:8072"
+    environment:
+      PROFILE: dev
+      CONFIGSERVER_URI: http://configserver:8089/
+      PORT: "8072"
+    depends_on:
+      configserver-dev:
+        condition: service_healthy
+      eurekaserver-dev:
+        condition: service_healthy
+    networks:
+      backend:
+        aliases:
+          - "gatewayserver"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8072/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   # --- SPOT SERVICE ---
   spot-service-dev:
     profiles: ["dev"]
