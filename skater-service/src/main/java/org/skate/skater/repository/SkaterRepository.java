@@ -8,8 +8,5 @@ import java.util.List;
 
 @Repository
 public interface SkaterRepository extends JpaRepository<Skater, String> {
-  Skater findBySkaterId(String skaterId);
-
-  List<Skater> findByNameIgnoreCase(String name);
-
+  List<Skater> findByUsernameIgnoreCase(String name);
 }

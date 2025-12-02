@@ -15,93 +15,103 @@ import java.util.List;
 @Transactional
 public class SpotService {
 
-    @Autowired
-    private SpotRepository spotRepository;
+  @Autowired
+  private SpotRepository spotRepository;
 
-    @Autowired
-    private TrickAttemptRepository trickAttemptRepository;
+  @Autowired
+  private TrickAttemptRepository trickAttemptRepository;
 
-    public Spot createSpot(Spot spot, String founderSkaterId) {
-        spot.setFounderSkaterId(founderSkaterId);
-        return spotRepository.save(spot);
+  public Spot createSpot(Spot spot, String founderSkaterId) {
+    spot.setFounderSkaterId(founderSkaterId);
+    return spotRepository.save(spot);
+  }
+
+  @Transactional(readOnly = true)
+  public Spot getSpot(String spotId) {
+    return spotRepository.findById(spotId)
+        .orElseThrow(() -> new RuntimeException("Spot not found: " + spotId));
+  }
+
+  @Transactional(readOnly = true)
+  public List<Spot> getAllSpots() {
+    return spotRepository.findAll();
+  }
+
+  public Spot updateSpot(String spotId, Spot updatedSpot, String requestingSkaterId) {
+    Spot spot = getSpot(spotId);
+
+    // Optional: Check if requester is the founder
+    if (!spot.getFounderSkaterId().equals(requestingSkaterId)) {
+      throw new RuntimeException("Only the spot founder can update this spot");
     }
 
-    @Transactional(readOnly = true)
-    public Spot getSpot(String spotId) {
-        return spotRepository.findById(spotId)
-                .orElseThrow(() -> new RuntimeException("Spot not found: " + spotId));
+    if (updatedSpot.getName() != null)
+      spot.setName(updatedSpot.getName());
+    if (updatedSpot.getAddress() != null)
+      spot.setAddress(updatedSpot.getAddress());
+    if (updatedSpot.getLatitude() != null)
+      spot.setLatitude(updatedSpot.getLatitude());
+    if (updatedSpot.getLongitude() != null)
+      spot.setLongitude(updatedSpot.getLongitude());
+    if (updatedSpot.getTypes() != null)
+      spot.setTypes(updatedSpot.getTypes());
+    if (updatedSpot.getDifficultyRating() != null)
+      spot.setDifficultyRating(updatedSpot.getDifficultyRating());
+    if (updatedSpot.getSurfaceQualityRating() != null)
+      spot.setSurfaceQualityRating(updatedSpot.getSurfaceQualityRating());
+    if (updatedSpot.getDescription() != null)
+      spot.setDescription(updatedSpot.getDescription());
+    if (updatedSpot.getIdealSkateTime() != null)
+      spot.setIdealSkateTime(updatedSpot.getIdealSkateTime());
+    if (updatedSpot.getPhotoUrls() != null)
+      spot.setPhotoUrls(updatedSpot.getPhotoUrls());
+
+    spot.setUpdatedAt(LocalDateTime.now());
+
+    return spotRepository.save(spot);
+  }
+
+  public void deleteSpot(String spotId, String requestingSkaterId) {
+    Spot spot = getSpot(spotId);
+
+    // Optional: Check if requester is the founder
+    if (!spot.getFounderSkaterId().equals(requestingSkaterId)) {
+      throw new RuntimeException("Only the spot founder can delete this spot");
     }
 
-    @Transactional(readOnly = true)
-    public List<Spot> getAllSpots() {
-        return spotRepository.findAll();
-    }
+    spotRepository.delete(spot);
+  }
 
-    public Spot updateSpot(String spotId, Spot updatedSpot, String requestingSkaterId) {
-        Spot spot = getSpot(spotId);
+  public List<TrickAttempt> addTrickAttempt(String spotId, String skaterId, String trickName) {
+    Spot spot = getSpot(spotId);
 
-        // Optional: Check if requester is the founder
-        if (!spot.getFounderSkaterId().equals(requestingSkaterId)) {
-            throw new RuntimeException("Only the spot founder can update this spot");
-        }
+    TrickAttempt attempt = new TrickAttempt();
+    attempt.setSkaterId(skaterId);
+    attempt.setTrickName(trickName);
 
-        if (updatedSpot.getName() != null) spot.setName(updatedSpot.getName());
-        if (updatedSpot.getAddress() != null) spot.setAddress(updatedSpot.getAddress());
-        if (updatedSpot.getLatitude() != null) spot.setLatitude(updatedSpot.getLatitude());
-        if (updatedSpot.getLongitude() != null) spot.setLongitude(updatedSpot.getLongitude());
-        if (updatedSpot.getTypes() != null) spot.setTypes(updatedSpot.getTypes());
-        if (updatedSpot.getDifficultyRating() != null) spot.setDifficultyRating(updatedSpot.getDifficultyRating());
-        if (updatedSpot.getSurfaceQualityRating() != null) spot.setSurfaceQualityRating(updatedSpot.getSurfaceQualityRating());
-        if (updatedSpot.getDescription() != null) spot.setDescription(updatedSpot.getDescription());
-        if (updatedSpot.getIdealSkateTime() != null) spot.setIdealSkateTime(updatedSpot.getIdealSkateTime());
-        if (updatedSpot.getPhotoUrls() != null) spot.setPhotoUrls(updatedSpot.getPhotoUrls());
+    spot.addTrickAttempt(attempt);
+    spotRepository.save(spot);
 
-        spot.setUpdatedAt(LocalDateTime.now());
+    return getTrickAttemptsForSpot(spot.getSpotId());
+  }
 
-        return spotRepository.save(spot);
-    }
+  @Transactional(readOnly = true)
+  public List<TrickAttempt> getTrickAttemptsForSpot(String spotId) {
+    return trickAttemptRepository.findBySpot_SpotId(spotId);
+  }
 
-    public void deleteSpot(String spotId, String requestingSkaterId) {
-        Spot spot = getSpot(spotId);
+  @Transactional(readOnly = true)
+  public List<Spot> getSpotsByFounder(String founderSkaterId) {
+    return spotRepository.findByFounderSkaterId(founderSkaterId);
+  }
 
-        // Optional: Check if requester is the founder
-        if (!spot.getFounderSkaterId().equals(requestingSkaterId)) {
-            throw new RuntimeException("Only the spot founder can delete this spot");
-        }
+  @Transactional(readOnly = true)
+  public List<Spot> searchSpotsByName(String name) {
+    return spotRepository.findByNameContainingIgnoreCase(name);
+  }
 
-        spotRepository.delete(spot);
-    }
-
-    public TrickAttempt addTrickAttempt(String spotId, String skaterId, String trickName) {
-        Spot spot = getSpot(spotId);
-
-        TrickAttempt attempt = new TrickAttempt();
-        attempt.setSkaterId(skaterId);
-        attempt.setTrickName(trickName);
-
-        spot.addTrickAttempt(attempt);
-        spotRepository.save(spot);
-
-        return attempt;
-    }
-
-    @Transactional(readOnly = true)
-    public List<TrickAttempt> getTrickAttemptsForSpot(String spotId) {
-        return trickAttemptRepository.findBySpot_SpotId(spotId);
-    }
-
-    @Transactional(readOnly = true)
-    public List<Spot> getSpotsByFounder(String founderSkaterId) {
-        return spotRepository.findByFounderSkaterId(founderSkaterId);
-    }
-
-    @Transactional(readOnly = true)
-    public List<Spot> searchSpotsByName(String name) {
-        return spotRepository.findByNameContainingIgnoreCase(name);
-    }
-
-    @Transactional(readOnly = true)
-    public List<Spot> getSpotsInArea(Double minLat, Double maxLat, Double minLon, Double maxLon) {
-        return spotRepository.findSpotsInArea(minLat, maxLat, minLon, maxLon);
-    }
+  @Transactional(readOnly = true)
+  public List<Spot> getSpotsInArea(Double minLat, Double maxLat, Double minLon, Double maxLon) {
+    return spotRepository.findSpotsInArea(minLat, maxLat, minLon, maxLon);
+  }
 }

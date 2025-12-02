@@ -13,20 +13,23 @@ CREATE TABLE skaters (
 );
 
 CREATE TABLE tricks (
-  id BIGSERIAL PRIMARY KEY,
   skater_id VARCHAR(36) NOT NULL,
+  trick_number INTEGER NOT NULL,
   name VARCHAR(100) NOT NULL,
   difficulty INTEGER CHECK (difficulty BETWEEN 1 AND 10),
   learned_at DATE,
+  PRIMARY KEY (skater_id, trick_number),
   FOREIGN KEY (skater_id) REFERENCES skaters(skater_id) ON DELETE CASCADE
 );
 
 CREATE TABLE trick_categories (
-    trick_id BIGINT NOT NULL,
+    skater_id VARCHAR(36) NOT NULL,
+    trick_number INTEGER NOT NULL,
     category VARCHAR(50) NOT NULL,
-    FOREIGN KEY (trick_id) REFERENCES tricks(id) ON DELETE CASCADE
+    PRIMARY KEY (skater_id, trick_number, category),
+    FOREIGN KEY (skater_id, trick_number) REFERENCES tricks(skater_id, trick_number) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_skaters_username ON skaters(username);
 CREATE INDEX idx_tricks_skater_id ON tricks(skater_id);
-CREATE INDEX idx_trick_categories_trick_id ON trick_categories(trick_id);
+CREATE INDEX idx_trick_categories_skater_id ON trick_categories(skater_id);

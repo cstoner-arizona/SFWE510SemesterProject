@@ -10,9 +10,7 @@ import java.util.List;
 
 @Repository
 public interface SessionTrickRepository extends JpaRepository<SessionTrick, Long> {
-  SessionTrick findBySessionTrickId(Long sessionId);
-
-  List<SessionTrick> findBySessionSessionId(Long sessionId);
+  List<SessionTrick> findBySessionSessionId(String sessionId);
 
   List<SessionTrick> findByTrickName(String trickName);
 

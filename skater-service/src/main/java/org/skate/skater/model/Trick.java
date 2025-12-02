@@ -20,15 +20,18 @@ import lombok.ToString;
 @Entity
 @Table(name = "tricks")
 public class Trick extends RepresentationModel<Trick> {
-  @Id
-  @Column(name = "id", nullable = false)
-  private Long id;
+  @EmbeddedId
+  private TrickId id;
 
   @Column(name = "name", nullable = false)
   private String name;
 
   @ElementCollection(targetClass = TrickCategory.class)
-  @CollectionTable(name = "trick_categories", joinColumns = @JoinColumn(name = "id"))
+  @CollectionTable(name = "trick_categories",
+                   joinColumns = {
+                     @JoinColumn(name = "skater_id", referencedColumnName = "skater_id"),
+                     @JoinColumn(name = "trick_number", referencedColumnName = "trick_number")
+                   })
   @Column(name = "category")
   @Enumerated(EnumType.STRING)
   private Set<TrickCategory> categories;
@@ -40,7 +43,7 @@ public class Trick extends RepresentationModel<Trick> {
   private LocalDate learnedAt;
 
   @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "skater_id", nullable = false)
+  @JoinColumn(name = "skater_id", referencedColumnName = "skater_id", insertable = false, updatable = false)
   @JsonIgnore
   private Skater skater;
 }

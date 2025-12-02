@@ -1,5 +1,5 @@
 spring:
   datasource:
-    url: "jdbc:postgresql://database:5432/spot_dev"
+    url: "jdbc:postgresql://spot-database:5432/spot_dev"
     username: "postgres"
     password: "postgres" #{cipher}a408581f1d4c56bd8a013a1a9a20867b1b0c4e324c36ea153558903212f88043

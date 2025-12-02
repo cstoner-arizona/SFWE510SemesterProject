@@ -18,7 +18,7 @@ public class SkaterServiceClient {
   public boolean exists(String skaterId) {
     try {
       restClient.get()
-          .uri("api/skaters/{id}", skaterId)
+          .uri("api/skater/{id}", skaterId)
           .retrieve()
           .toBodilessEntity();
       return true;
@@ -29,7 +29,7 @@ public class SkaterServiceClient {
 
   public SkaterResponse getSkater(String skaterId) {
     return restClient.get()
-        .uri("/api/skaters/{id}", skaterId)
+        .uri("/api/skater/{id}", skaterId)
         .retrieve()
         .body(SkaterResponse.class);
   }

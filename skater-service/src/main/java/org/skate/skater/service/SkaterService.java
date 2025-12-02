@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -15,6 +16,7 @@ public class SkaterService {
   private SkaterRepository skaterRepository;
 
   public Skater createSkater(Skater skater) {
+    skater.setCreatedAt(LocalDateTime.now());
     return skaterRepository.save(skater);
   }
 

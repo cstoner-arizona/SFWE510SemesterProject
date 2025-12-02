@@ -11,14 +11,15 @@ CREATE TABLE sessions (
 );
 
 CREATE TABLE session_tricks (
-    id BIGSERIAL PRIMARY KEY,
     session_id VARCHAR(36) NOT NULL,
+    trick_number INTEGER NOT NULL,
     trick_name VARCHAR(100) NOT NULL,
     attempts INTEGER,
     lands INTEGER,
     is_new_trick BOOLEAN DEFAULT FALSE,
     notes VARCHAR(500),
     timestamp TIMESTAMP,
+    PRIMARY KEY (session_id, trick_number),
     FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
 

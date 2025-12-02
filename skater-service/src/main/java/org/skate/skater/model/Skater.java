@@ -49,17 +49,14 @@ public class Skater extends RepresentationModel<Skater> {
   @Column(name = "profile_photo_url")
   private String profilePhotoUrl;
 
-  @Column(name = "tricks")
-  @Enumerated(EnumType.STRING)
-  @CollectionTable(name = "trick", joinColumns = @JoinColumn(name = "skater_id"))
-  @ElementCollection(targetClass = Trick.class)
+  @OneToMany(mappedBy = "skater", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
   private List<Trick> tricks;
 
-  @Column(name = "created_at")
-  private LocalDateTime created_at;
+  @Column(name = "created_at", nullable = false)
+  private LocalDateTime createdAt;
 
   @Column(name = "updated_at")
-  private LocalDateTime updated_at;
+  private LocalDateTime updatedAt;
 
   public void updateFrom(Skater other) {
     if (other.getUsername() != null)
@@ -81,6 +78,6 @@ public class Skater extends RepresentationModel<Skater> {
     if (other.getTricks() != null && other.getTricks() instanceof List<Trick>)
       this.tricks = other.getTricks();
 
-    this.updated_at = LocalDateTime.now();
+    this.updatedAt = LocalDateTime.now();
   }
 }

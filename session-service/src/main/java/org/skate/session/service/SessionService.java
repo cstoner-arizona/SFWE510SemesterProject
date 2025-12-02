@@ -116,7 +116,7 @@ public class SessionService {
   }
 
   @Transactional(readOnly = true)
-  public List<SessionTrick> getTricksFromSession(Long sessionId) {
+  public List<SessionTrick> getTricksFromSession(String sessionId) {
     return sessionTrickRepository.findBySessionSessionId(sessionId);
   }
 

@@ -9,8 +9,6 @@ import java.util.List;
 
 @Repository
 public interface SessionRepository extends JpaRepository<Session, String> {
-  Session findBySessionId(String sessionId);
-
   List<Session> findBySkaterId(String skaterId);
 
   List<Session> findBySpotId(String spotId);

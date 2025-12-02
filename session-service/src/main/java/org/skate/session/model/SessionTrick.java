@@ -17,10 +17,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "session_tricks")
 public class SessionTrick extends RepresentationModel<SessionTrick> {
-  @Id
-  @Column(name = "id", nullable = false)
-  @GeneratedValue(strategy = GenerationType.IDENTITY)
-  private Long id;
+  @EmbeddedId
+  private SessionTrickId id;
 
   @Column(name = "trick_name", nullable = false)
   private String trickName;
@@ -38,7 +36,7 @@ public class SessionTrick extends RepresentationModel<SessionTrick> {
   private String notes;
 
   @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "session_id", nullable = false)
+  @JoinColumn(name = "session_id", referencedColumnName = "session_id", insertable = false, updatable = false)
   @JsonIgnore
   private Session session;
 
