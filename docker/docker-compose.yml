@@ -1,5 +1,5 @@
 services:
-  # --- DATABASE ---
+  # --- DATABASES ---
   spot-database-dev:
     profiles: ["dev"]
     image: postgres:latest
@@ -10,12 +10,56 @@ services:
       POSTGRES_PASSWORD: "postgres"
       POSTGRES_DB: "spot_dev"
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/1-init.sql
-      - ./data.sql:/docker-entrypoint-initdb.d/2-data.sql
+      - ./init-spot.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./data-spot.sql:/docker-entrypoint-initdb.d/2-data.sql
     networks:
       backend:
         aliases:
-        - "database"
+        - "spot-database"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  skater-database-dev:
+    profiles: ["dev"]
+    image: postgres:latest
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "skater_dev"
+    volumes:
+      - ./init-skater.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./data-skater.sql:/docker-entrypoint-initdb.d/2-data.sql
+    networks:
+      backend:
+        aliases:
+          - "skater-database"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  session-database-dev:
+    profiles: ["dev"]
+    image: postgres:latest
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "session_dev"
+    volumes:
+      - ./init-session.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./data-session.sql:/docker-entrypoint-initdb.d/2-data.sql
+    networks:
+      backend:
+        aliases:
+          - "session-database"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -29,7 +73,7 @@ services:
     ports:
     - "8089:8089"
     environment:
-      PORT: 8089
+      PORT: "8089"
       SPRING_PROFILES_ACTIVE: native
       SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: classpath:/config/
       ENCRYPT_KEY: "oK5wCXS4nADchiI9WEXYPdJrqeNhuzxeTFSwf1qo5ic=" # generated with: openssl rand -base64 32 TODO: move to .env file, then add to .gitignore
@@ -40,33 +84,69 @@ services:
 
 
   # --- EUREKA SERVER ---
-  eurekaserver:
-    image: skate/eurekaserver:0.0.1-SNAPSHOT
-    container-name: eureka-server
-    ports:
-      - "8070:8070"
-    depends_on:
-      database:
-        condition: service_healthy
-      configserver:
-        condition: service_started
-    networks:
-      backend:
-        aliases:
-          - "eurekaserver"
+  # eurekaserver:
+  #   image: skate/eurekaserver:0.0.1-SNAPSHOT
+  #   container-name: eureka-server
+  #   ports:
+  #     - "8070:8070"
+  #   depends_on:
+  #     database:
+  #       condition: service_healthy
+  #     configserver:
+  #       condition: service_started
+  #   networks:
+  #     backend:
+  #       aliases:
+  #         - "eurekaserver"
 
   # --- SPOT SERVICE ---
   spot-service-dev:
     profiles: ["dev"]
     image: skate/spot-service:0.0.1-SNAPSHOT
-    pull_policy: never
     ports:
       - "8080:8080"
     environment:
       PROFILE: dev
       CONFIGSERVER_URI: http://configserver:8089/
+      PORT: "8080"
     depends_on:
       spot-database-dev:
+        condition: service_healthy
+      configserver-dev:
+        condition: service_started
+    networks:
+      - backend
+
+  # --- SKATER SERVICE ---
+  skater-service-dev:
+    profiles: ["dev"]
+    image: skate/skater-service:0.0.1-SNAPSHOT
+    ports:
+      - "8081:8081"
+    environment:
+      PROFILE: dev
+      CONFIGSERVER_URI: http://configserver:8089/
+      PORT: "8081"
+    depends_on:
+      skater-database-dev:
+        condition: service_healthy
+      configserver-dev:
+        condition: service_started
+    networks:
+      - backend
+
+  # --- SESSION SERVICE ---
+  session-service-dev:
+    profiles: ["dev"]
+    image: skate/session-service:0.0.1-SNAPSHOT
+    ports:
+      - "8082:8082"
+    environment:
+      PROFILE: dev
+      CONFIGSERVER_URI: http://configserver:8089/
+      PORT: "8082"
+    depends_on:
+      session-database-dev:
         condition: service_healthy
       configserver-dev:
         condition: service_started

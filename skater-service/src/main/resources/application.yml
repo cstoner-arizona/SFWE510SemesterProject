@@ -3,10 +3,8 @@ spring:
     name: skater-service
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
-  cloud:
-    config:
-      uri: http://configserver:8089
-      fail-fast: false
-      retry:
-        max-attempts: 10
-        initial-interval: 2000
+  config:
+    import: "optional:configserver:http://configserver:8089"
+
+server:
+  port: ${PORT:8081}

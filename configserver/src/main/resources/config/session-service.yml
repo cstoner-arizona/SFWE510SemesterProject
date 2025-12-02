@@ -1,0 +1,32 @@
+# Default Properties for session-service
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: "none"
+    database: "POSTGRESQL"
+    show-sql: true
+    naming-strategy: "org.hibernate.cfg.ImprovedNamingStrategy"
+    properties:
+      hibernate:
+        dialect: "org.hibernate.dialect.PostgreSQLDialect"
+  datasource:
+    driver-class-name: "org.postgresql.Driver"
+    testWhileIdle: true
+    validationQuery: "SELECT 1"
+
+management:
+  endpoints:
+    enabled-by-default: false
+    health:
+      enabled: true
+      show-details: "always"
+      db:
+        enabled: false
+      diskspace:
+        enabled: true
+
+services:
+  spot:
+    url: http://spot-service:8080
+  skater:
+    url: http://skater-service:8081

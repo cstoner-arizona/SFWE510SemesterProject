@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM openjdk:21-slim as build
+FROM eclipse-temurin:21-jdk-jammy as build
 
 LABEL maintainer="Christopher Stoner <cstoner@arizona.edu>"
 
@@ -10,7 +10,7 @@ COPY ${JAR_FILE} app.jar
 RUN mkdir -p target/dependency && (cd target/dependency; jar -xf /app.jar)
 
 # Stage 2: Create the runtime image
-FROM openjdk:21-slim
+FROM eclipse-temurin:21-jre-jammy
 
 VOLUME /tmp
 

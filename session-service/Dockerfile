@@ -26,5 +26,4 @@ ENTRYPOINT ["java",\
   "--add-opens=java.base/java.nio.charset=ALL-UNNAMED",\
   "--add-opens=java.base/java.lang=ALL-UNNAMED",\
   "-cp", "app:app/lib/*",\
-  "org.skate.session.SessionServiceApplication"
-]
+  "org.skate.session.SessionServiceApplication"]

@@ -12,7 +12,7 @@
 
     <groupId>org.skate</groupId>
     <artifactId>skater-service</artifactId>
-    <name>spot-service</name>
+    <name>skater-service</name>
     <version>0.0.1-SNAPSHOT</version>
 
     <properties>

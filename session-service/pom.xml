@@ -12,7 +12,7 @@
 
     <groupId>org.skate</groupId>
     <artifactId>session-service</artifactId>
-    <name>spot-service</name>
+    <name>session-service</name>
     <version>0.0.1-SNAPSHOT</version>
 
     <properties>

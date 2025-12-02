@@ -14,8 +14,8 @@
 
   <modules>
     <module>configserver</module>
-    <module>eurekaserver</module>
-    <module>gatewayserver</module>
+    <!-- <module>eurekaserver</module> -->
+    <!-- <module>gatewayserver</module> -->
     <module>session-service</module>
     <module>skater-service</module>
     <module>spot-service</module>
