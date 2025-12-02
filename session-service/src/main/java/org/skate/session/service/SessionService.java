@@ -54,7 +54,7 @@ public class SessionService {
     return sessionRepository.save(session);
   }
 
-  public Session endSession(Long sessionId, String skaterId, Integer rating) {
+  public Session endSession(String sessionId, String skaterId, Integer rating) {
     Session session = getSession(sessionId);
 
     // Verify the skaterId
@@ -76,7 +76,7 @@ public class SessionService {
   }
 
   @Transactional(readOnly = true)
-  public Session getSession(Long sessionId) {
+  public Session getSession(String sessionId) {
     return sessionRepository.findById(sessionId)
         .orElseThrow(() -> new RuntimeException("Session not found: " + sessionId));
   }
@@ -97,7 +97,7 @@ public class SessionService {
     return active_session.orElseThrow(() -> new RuntimeException("No Active Session Found: " + skaterId));
   }
 
-  public SessionTrick addTrickToSession(Long sessionId, String skaterId, SessionTrick trick) {
+  public SessionTrick addTrickToSession(String sessionId, String skaterId, SessionTrick trick) {
     Session session = getSession(sessionId);
 
     if (!session.getSkaterId().equals(skaterId)) {
@@ -120,7 +120,7 @@ public class SessionService {
     return sessionTrickRepository.findBySessionSessionId(sessionId);
   }
 
-  public void deleteSession(Long sessionId, String skaterId) {
+  public void deleteSession(String sessionId, String skaterId) {
     Session session = getSession(sessionId);
 
     if (!session.getSkaterId().equals(skaterId)) {

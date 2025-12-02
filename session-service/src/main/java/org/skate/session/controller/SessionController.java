@@ -40,7 +40,7 @@ public class SessionController {
    */
   @PutMapping("/{sessionId}/end")
   public ResponseEntity<Session> endSession(
-      @PathVariable Long sessionId,
+      @PathVariable String sessionId,
       @RequestBody(required = false) Map<String, Integer> request,
       @RequestHeader("X-Skater-Id") String skaterId) {
 
@@ -55,7 +55,7 @@ public class SessionController {
    */
   @GetMapping("/{sessionId}")
   public ResponseEntity<Session> getSession(
-      @PathVariable Long sessionId) {
+      @PathVariable String sessionId) {
 
     Session session = sessionService.getSession(sessionId);
     return ResponseEntity.ok(session);
