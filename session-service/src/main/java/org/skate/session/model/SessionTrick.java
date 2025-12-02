@@ -9,6 +9,8 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
+import java.time.LocalDateTime;
+
 @Getter
 @Setter
 @ToString
@@ -39,4 +41,7 @@ public class SessionTrick extends RepresentationModel<SessionTrick> {
   @JoinColumn(name = "session_id", nullable = false)
   @JsonIgnore
   private Session session;
+
+  @Column(name = "timestamp")
+  private LocalDateTime timestamp;
 }

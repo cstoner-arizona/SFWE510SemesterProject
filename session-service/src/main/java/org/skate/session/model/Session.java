@@ -33,7 +33,7 @@ public class Session extends RepresentationModel<Session> {
   @Column(name = "start_time", nullable = false)
   private LocalDateTime startTime;
 
-  @Column(name = "end_time", nullable = false)
+  @Column(name = "end_time", nullable = true)
   private LocalDateTime endTime;
 
   @Column(name = "notes")
@@ -51,4 +51,14 @@ public class Session extends RepresentationModel<Session> {
   @CreationTimestamp
   @Column(name = "created_at")
   private LocalDateTime createdAt;
+
+  public void addSessionTrick(SessionTrick trick) {
+    sessionTricks.add(trick);
+    trick.setSession(this);
+  }
+
+  public void removeSessionTrick(SessionTrick trick) {
+    sessionTricks.remove(trick);
+    trick.setSession(null);
+  }
 }
