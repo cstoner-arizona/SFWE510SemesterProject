@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: eurekaserver
+  profiles:
+    active: ${PROFILE:dev}
+  config:
+    import: "optional:configserver:${CONFIGSERVER_URI:http://configserver:8089}"
+
+server:
+  port: ${PORT:8070}
+
+eureka:
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:eurekaserver}
+  client:
+    registerWithEureka: false
+    fetchRegistry: false
+    serviceUrl:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+  server:
+    waitTimeInMsWhenSyncEmpty: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"

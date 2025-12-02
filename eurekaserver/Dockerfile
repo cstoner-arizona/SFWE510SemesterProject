@@ -24,5 +24,4 @@ COPY --from=build ${DEPENDENCY}/BOOT-INF/classes /app
 
 ENTRYPOINT ["java",\
   "-cp", "app:app/lib/*",\
-  "org.skate.eureka.EurekaServerApplication"
-]
+  "org.skate.eureka.EurekaServerApplication"]

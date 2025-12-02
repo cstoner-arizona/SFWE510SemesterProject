@@ -1,5 +1,7 @@
 # Default Properties for skater-service
 spring:
+  application:
+    name: skater-service
   jpa:
     hibernate:
       ddl-auto: "none"
@@ -13,6 +15,15 @@ spring:
     driver-class-name: "org.postgresql.Driver"
     testWhileIdle: true
     validationQuery: "SELECT 1"
+
+eureka:
+  instance:
+    preferIpAddress: true
+  client:
+    registerWithEureka: true
+    fetchRegistry: true
+    serviceUrl:
+      defaultZone: http://eurekaserver:8070/eureka/
 
 management:
   endpoints:

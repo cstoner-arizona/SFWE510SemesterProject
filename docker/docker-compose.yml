@@ -81,23 +81,38 @@ services:
       backend:
         aliases:
           - "configserver"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 
   # --- EUREKA SERVER ---
-  # eurekaserver:
-  #   image: skate/eurekaserver:0.0.1-SNAPSHOT
-  #   container-name: eureka-server
-  #   ports:
-  #     - "8070:8070"
-  #   depends_on:
-  #     database:
-  #       condition: service_healthy
-  #     configserver:
-  #       condition: service_started
-  #   networks:
-  #     backend:
-  #       aliases:
-  #         - "eurekaserver"
+  eurekaserver-dev:
+    profiles: ["dev"]
+    image: skate/eurekaserver:0.0.1-SNAPSHOT
+    ports:
+      - "8070:8070"
+    environment:
+      PROFILE: dev
+      CONFIGSERVER_URI: http://configserver:8089/
+      PORT: "8070"
+      EUREKA_INSTANCE_HOSTNAME: eurekaserver
+    depends_on:
+      configserver-dev:
+        condition: service_healthy
+    networks:
+      backend:
+        aliases:
+          - "eurekaserver"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8070/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # --- SPOT SERVICE ---
   spot-service-dev:
@@ -113,7 +128,9 @@ services:
       spot-database-dev:
         condition: service_healthy
       configserver-dev:
-        condition: service_started
+        condition: service_healthy
+      eurekaserver-dev:
+        condition: service_healthy
     networks:
       - backend
 
@@ -131,7 +148,9 @@ services:
       skater-database-dev:
         condition: service_healthy
       configserver-dev:
-        condition: service_started
+        condition: service_healthy
+      eurekaserver-dev:
+        condition: service_healthy
     networks:
       - backend
 
@@ -149,7 +168,9 @@ services:
       session-database-dev:
         condition: service_healthy
       configserver-dev:
-        condition: service_started
+        condition: service_healthy
+      eurekaserver-dev:
+        condition: service_healthy
     networks:
       - backend
 
