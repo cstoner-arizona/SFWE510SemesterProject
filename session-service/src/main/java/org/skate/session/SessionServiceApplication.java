@@ -1,4 +1,4 @@
-package org.skate.skater;
+package org.skate.session;
 
 import java.util.Locale;
 import org.springframework.boot.SpringApplication;
@@ -11,9 +11,9 @@ import org.springframework.web.servlet.i18n.SessionLocaleResolver;
 
 @SpringBootApplication
 @RefreshScope
-public class SkaterServiceApplication {
+public class SessionServiceApplication {
   public static void main(String[] args) {
-    SpringApplication.run(SkaterServiceApplication.class, args);
+    SpringApplication.run(SessionServiceApplication.class, args);
   }
 
   @Bean
