@@ -12,9 +12,3 @@ eureka:
     fetchRegistry: true
     serviceUrl:
       defaultZone: http://eurekaserver:8070/eureka/
-
-services:
-  spot:
-    url: http://spot-service-dev:8080
-  skater:
-    url: http://skater-service-dev:8081

@@ -35,9 +35,3 @@ management:
         enabled: false
       diskspace:
         enabled: true
-
-services:
-  spot:
-    url: http://spot-service:8080
-  skater:
-    url: http://skater-service:8081

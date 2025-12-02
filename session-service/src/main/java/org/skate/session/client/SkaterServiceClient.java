@@ -1,6 +1,5 @@
 package org.skate.session.client;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -9,9 +8,9 @@ import org.springframework.web.client.RestClientException;
 public class SkaterServiceClient {
   private final RestClient restClient;
 
-  public SkaterServiceClient(@Value("${services.skater.url}") String baseUrl) {
-    this.restClient = RestClient.builder()
-        .baseUrl(baseUrl)
+  public SkaterServiceClient(RestClient.Builder restClientBuilder) {
+    this.restClient = restClientBuilder
+        .baseUrl("http://skater-service")
         .build();
   }
 
