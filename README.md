@@ -53,31 +53,7 @@ And now, we can use Docker Compose to start the application:
 docker-compose -f docker/docker-compose.yml --profile dev up
 ```
 
-## URLS & Endpoints
+## Postman
 
-Once the application is running, you can access the following urls:
-
-- Configuration Server: `http://localhost:8089`
-- Spot Service: `http://localhost:8080`
-- Database: `http://localhost:5432` (postgres/postgres)
-
-Then the following endpoints are available to use the spot service:
-
-### Spot CRUD
-
-* POST : /api/spots : Creates a new spot
-* GET : /api/spots : Retrieves all spots
-* GET : /api/spots/{id} : Retrieves a spot by assigned UUID
-* PUT : /api/spots/{id} : Updates a spot by assigned UUID
-* DELETE : /api/spots/{id} : Deletes a spot by assigned UUID
-
-### Search
-
-* GET : /api/spots/search?name={name} : Searches spots by name
-* GET : /api/spots/founder/{founderSkaterId} : Retrieves spots by founder skater ID
-* GET : /api/spots/area?minLat={minLat}&maxLat={maxLat}&minLng={minLng}&maxLng={maxLng} : Searches spots within a geographic area
-
-### Trick Attempts
-
-* POST : /api/spots/{spotId}/trick-attempts : Adds a trick attempt to a spot (requires X-Skater-Id header)
-* GET : /api/spots/{spotId}/trick-attempts : Retrieves all trick attempts for a spot
+Once running, you can utilize the Postman collections to start interacting with each service.
+There is 2 collections, one to ping directly to a service, and one to instead use the gateway.
