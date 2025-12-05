@@ -5,6 +5,7 @@ spring:
   application:
     name: gatewayserver
   cloud:
+    loadbalancer.ribbon.enabled: false
     gateway:
       discovery:
         locator:
