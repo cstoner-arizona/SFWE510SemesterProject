@@ -124,10 +124,14 @@ services:
       PROFILE: dev
       CONFIGSERVER_URI: http://configserver:8089/
       PORT: "8072"
+      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/skate
+      KEYCLOAK_JWK_URI: http://keycloak:8080/realms/skate/protocol/openid-connect/certs
     depends_on:
       configserver-dev:
         condition: service_healthy
       eurekaserver-dev:
+        condition: service_healthy
+      keycloak-dev:
         condition: service_healthy
     networks:
       backend:
@@ -334,6 +338,8 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME_URL: http://keycloak:8080
+      KC_HOSTNAME_ADMIN_URL: http://keycloak:8080
     volumes:
       - ./keycloak/skate-realm.json:/opt/keycloak/data/import/skate-realm.json
     command: start-dev --import-realm

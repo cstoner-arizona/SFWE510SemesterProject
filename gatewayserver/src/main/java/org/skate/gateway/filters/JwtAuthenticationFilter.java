@@ -2,12 +2,13 @@ package org.skate.gateway.filters;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
@@ -23,9 +24,6 @@ public class JwtAuthenticationFilter implements GlobalFilter {
 
   private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
-  @Autowired
-  private FilterUtils filterUtils;
-
   @Override
   public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
     return ReactiveSecurityContextHolder.getContext()
@@ -33,15 +31,24 @@ public class JwtAuthenticationFilter implements GlobalFilter {
         .filter(authentication -> authentication instanceof JwtAuthenticationToken)
         .cast(JwtAuthenticationToken.class)
         .map(JwtAuthenticationToken::getToken)
-        .map(jwt -> {
+        .flatMap(jwt -> {
           // Extract the 'sub' claim from the JWT - this is the skater ID
           String skaterId = jwt.getSubject();
           logger.debug("Extracted skaterId from JWT sub claim: {}", skaterId);
 
-          // Set the X-Skater-Id header for downstream services
-          return filterUtils.setSkaterId(exchange, skaterId);
+          // Create a new request with mutable headers
+          ServerHttpRequest mutatedRequest = new ServerHttpRequestDecorator(exchange.getRequest()) {
+            @Override
+            public HttpHeaders getHeaders() {
+              HttpHeaders headers = new HttpHeaders();
+              headers.putAll(super.getHeaders());
+              headers.add(FilterUtils.SKATER_ID, skaterId);
+              return headers;
+            }
+          };
+
+          return chain.filter(exchange.mutate().request(mutatedRequest).build());
         })
-        .defaultIfEmpty(exchange)  // If no JWT (e.g., permitAll endpoints), continue without setting header
-        .flatMap(chain::filter);
+        .switchIfEmpty(chain.filter(exchange));  // If no JWT (e.g., permitAll endpoints), continue without setting header
   }
 }
