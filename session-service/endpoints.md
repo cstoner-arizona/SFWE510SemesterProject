@@ -1,9 +1,50 @@
 # Session Service API Endpoints
 
-Base URL: `http://localhost:8082`
+Base URL (via Gateway): `http://localhost:8072`
+Direct URL: `http://localhost:8082`
 
 ## Authentication
-All endpoints require an `X-Skater-Id` header for authentication (temporary auth mechanism).
+
+All endpoints require JWT authentication via Keycloak. The gateway extracts the `sub` claim from the JWT and forwards it as the `X-Skater-Id` header to downstream services.
+
+### Getting a JWT Token
+
+**POST** `http://localhost:8084/realms/skate/protocol/openid-connect/token`
+
+**Body** (x-www-form-urlencoded):
+| Key | Value |
+|-----|-------|
+| `grant_type` | `password` |
+| `client_id` | `skate-app` |
+| `client_secret` | `skate-app-secret` |
+| `username` | `tony_hawk` |
+| `password` | `password` |
+
+**Response**:
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+### Using the Token
+
+Add the following header to all API requests:
+```
+Authorization: Bearer {access_token}
+```
+
+### Test Users
+
+| Username | Password | Skater ID |
+|----------|----------|-----------|
+| `tony_hawk` | `password` | `650e8400-e29b-41d4-a716-446655440001` |
+| `sk8ergirl` | `password` | `650e8400-e29b-41d4-a716-446655440002` |
+| `grind_master` | `password` | `650e8400-e29b-41d4-a716-446655440003` |
+| `flip_wizard` | `password` | `650e8400-e29b-41d4-a716-446655440004` |
+| `newbie_skate` | `password` | `650e8400-e29b-41d4-a716-446655440005` |
 
 ---
 
@@ -11,7 +52,7 @@ All endpoints require an `X-Skater-Id` header for authentication (temporary auth
 
 ### Start a New Session
 - **POST** `/api/session`
-- **Headers**: `X-Skater-Id: {skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Body**:
 ```json
 {
@@ -25,7 +66,7 @@ All endpoints require an `X-Skater-Id` header for authentication (temporary auth
 
 ### End an Active Session
 - **PUT** `/api/session/{sessionId}/end`
-- **Headers**: `X-Skater-Id: {skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Body** (optional):
 ```json
 {
@@ -37,15 +78,17 @@ All endpoints require an `X-Skater-Id` header for authentication (temporary auth
 
 ### Get Session by ID
 - **GET** `/api/session/{sessionId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `200 OK` - Returns Session object with all session tricks
 
 ### Get All Sessions by Skater
 - **GET** `/api/session/skater/{skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `200 OK` - Returns array of Session objects for the specified skater
 
 ### Get Active Session
 - **GET** `/api/session/active`
-- **Headers**: `X-Skater-Id: {skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `200 OK` - Returns the currently active Session for the authenticated skater
 - **Notes**: Returns the session where `endTime` is null
 
@@ -74,6 +117,8 @@ All endpoints require an `X-Skater-Id` header for authentication (temporary auth
 - All IDs are UUID strings
 - Sessions track when a skater visits a spot
 - A skater can only have one active session at a time (endTime must be null)
-- The `X-Skater-Id` header is a temporary authentication mechanism (TODO: Replace with actual auth)
 - Session tricks are managed through the SessionTrick entity (one-to-many relationship)
 - Timestamps are in ISO 8601 format
+- JWT authentication is handled at the gateway level
+- The gateway extracts the user ID from the JWT `sub` claim and sets it as `X-Skater-Id`
+- Keycloak admin console: `http://localhost:8084` (admin/admin)

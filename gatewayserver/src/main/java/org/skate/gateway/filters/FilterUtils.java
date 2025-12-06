@@ -10,6 +10,7 @@ import org.springframework.web.server.ServerWebExchange;
 public class FilterUtils {
   public static final String CORRELATION_ID = "tmx-correlation-id";
   public static final String AUTH_TOKEN = "Authorization";
+  public static final String SKATER_ID = "X-Skater-Id";
   public static final String PRE_FILTER_TYPE = "pre";
   public static final String POST_FILTER_TYPE = "post";
   public static final String ROUTE_FILTER_TYPE = "route";
@@ -39,5 +40,9 @@ public class FilterUtils {
 
   public ServerWebExchange setCorrelationId(ServerWebExchange exchange, String correlationId) {
     return this.setRequstHeader(exchange, CORRELATION_ID, correlationId);
+  }
+
+  public ServerWebExchange setSkaterId(ServerWebExchange exchange, String skaterId) {
+    return this.setRequstHeader(exchange, SKATER_ID, skaterId);
   }
 }

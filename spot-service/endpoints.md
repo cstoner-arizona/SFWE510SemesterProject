@@ -1,9 +1,50 @@
 # Spot Service API Endpoints
 
-Base URL: `http://localhost:8080`
+Base URL (via Gateway): `http://localhost:8072`
+Direct URL: `http://localhost:8080`
 
 ## Authentication
-Most endpoints require an `X-Skater-Id` header for authentication (temporary auth mechanism).
+
+All endpoints require JWT authentication via Keycloak. The gateway extracts the `sub` claim from the JWT and forwards it as the `X-Skater-Id` header to downstream services.
+
+### Getting a JWT Token
+
+**POST** `http://localhost:8084/realms/skate/protocol/openid-connect/token`
+
+**Body** (x-www-form-urlencoded):
+| Key | Value |
+|-----|-------|
+| `grant_type` | `password` |
+| `client_id` | `skate-app` |
+| `client_secret` | `skate-app-secret` |
+| `username` | `tony_hawk` |
+| `password` | `password` |
+
+**Response**:
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+### Using the Token
+
+Add the following header to all API requests:
+```
+Authorization: Bearer {access_token}
+```
+
+### Test Users
+
+| Username | Password | Skater ID |
+|----------|----------|-----------|
+| `tony_hawk` | `password` | `650e8400-e29b-41d4-a716-446655440001` |
+| `sk8ergirl` | `password` | `650e8400-e29b-41d4-a716-446655440002` |
+| `grind_master` | `password` | `650e8400-e29b-41d4-a716-446655440003` |
+| `flip_wizard` | `password` | `650e8400-e29b-41d4-a716-446655440004` |
+| `newbie_skate` | `password` | `650e8400-e29b-41d4-a716-446655440005` |
 
 ---
 
@@ -11,7 +52,7 @@ Most endpoints require an `X-Skater-Id` header for authentication (temporary aut
 
 ### Create Spot
 - **POST** `/api/spots`
-- **Headers**: `X-Skater-Id: {skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Body**:
 ```json
 {
@@ -32,21 +73,23 @@ Most endpoints require an `X-Skater-Id` header for authentication (temporary aut
 
 ### Get Spot by ID
 - **GET** `/api/spots/{spotId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `200 OK` - Returns Spot object
 
 ### Get All Spots
 - **GET** `/api/spots`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `200 OK` - Returns array of Spot objects
 
 ### Update Spot
 - **PUT** `/api/spots/{spotId}`
-- **Headers**: `X-Skater-Id: {skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Body**: Same as Create Spot (partial updates supported)
 - **Response**: `200 OK` - Returns updated Spot object
 
 ### Delete Spot
 - **DELETE** `/api/spots/{spotId}`
-- **Headers**: `X-Skater-Id: {skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `204 No Content`
 
 ---
@@ -55,16 +98,19 @@ Most endpoints require an `X-Skater-Id` header for authentication (temporary aut
 
 ### Search Spots by Name
 - **GET** `/api/spots/search?name={spotName}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Query Parameters**:
   - `name` (required): Name to search for
 - **Response**: `200 OK` - Returns array of matching Spot objects
 
 ### Get Spots by Founder
 - **GET** `/api/spots/founder/{founderSkaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `200 OK` - Returns array of Spot objects created by the founder
 
 ### Get Spots in Geographic Area
 - **GET** `/api/spots/area?minLat={minLat}&maxLat={maxLat}&minLon={minLon}&maxLon={maxLon}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Query Parameters**:
   - `minLat` (required): Minimum latitude
   - `maxLat` (required): Maximum latitude
@@ -78,7 +124,7 @@ Most endpoints require an `X-Skater-Id` header for authentication (temporary aut
 
 ### Add Trick Attempt to Spot
 - **POST** `/api/spots/{spotId}/trick-attempts`
-- **Headers**: `X-Skater-Id: {skaterId}`
+- **Headers**: `Authorization: Bearer {token}`
 - **Body**:
 ```json
 {
@@ -89,11 +135,14 @@ Most endpoints require an `X-Skater-Id` header for authentication (temporary aut
 
 ### Get Trick Attempts for Spot
 - **GET** `/api/spots/{spotId}/trick-attempts`
+- **Headers**: `Authorization: Bearer {token}`
 - **Response**: `200 OK` - Returns array of TrickAttempt objects
 
 ---
 
 ## Notes
 - All IDs are UUID strings
-- The `X-Skater-Id` header is a temporary authentication mechanism (TODO: Replace with actual auth)
+- JWT authentication is handled at the gateway level
+- The gateway extracts the user ID from the JWT `sub` claim and sets it as `X-Skater-Id`
 - Only the spot founder (creator) can update or delete a spot
+- Keycloak admin console: `http://localhost:8084` (admin/admin)

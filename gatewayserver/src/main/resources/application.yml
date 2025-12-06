@@ -5,6 +5,12 @@ spring:
     active: ${PROFILE:dev}
   config:
     import: "optional:configserver:${CONFIGSERVER_URI:http://configserver:8089}"
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8080/realms/skate}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://keycloak:8080/realms/skate/protocol/openid-connect/certs}
 
 server:
   port: ${PORT:8072}
