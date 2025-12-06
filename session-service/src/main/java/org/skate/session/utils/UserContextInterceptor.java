@@ -1,4 +1,4 @@
-package org.skate.spot.utils;
+package org.skate.session.utils;
 
 import java.io.IOException;
 
