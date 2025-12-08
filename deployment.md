@@ -1,6 +1,6 @@
-# AWS Deployment Guide - Skate Spots Application
+# AWS EKS Deployment Guide - Skate Spots Application
 
-This guide walks you through deploying the Skate Spots microservices application to AWS using ECS Fargate.
+This guide walks you through deploying the Skate Spots microservices application to AWS using Amazon EKS (Elastic Kubernetes Service).
 
 ## Table of Contents
 
@@ -8,10 +8,10 @@ This guide walks you through deploying the Skate Spots microservices application
 2. [AWS Account Setup](#2-aws-account-setup)
 3. [Install Required Tools](#3-install-required-tools)
 4. [AWS CLI Configuration](#4-aws-cli-configuration)
-5. [Create AWS Infrastructure](#5-create-aws-infrastructure)
-6. [Push Docker Images to ECR](#6-push-docker-images-to-ecr)
-7. [Deploy Services to ECS](#7-deploy-services-to-ecs)
-8. [Configure Networking & Load Balancer](#8-configure-networking--load-balancer)
+5. [Create Supporting Infrastructure](#5-create-supporting-infrastructure)
+6. [Create EKS Cluster](#6-create-eks-cluster)
+7. [Push Docker Images to ECR](#7-push-docker-images-to-ecr)
+8. [Deploy to Kubernetes](#8-deploy-to-kubernetes)
 9. [Testing the Deployment](#9-testing-the-deployment)
 10. [Cleanup](#10-cleanup)
 
@@ -23,8 +23,9 @@ Before starting, ensure you have:
 
 - [ ] Java 21 and Maven installed locally
 - [ ] Docker installed and running
-- [ ] Git repository with latest code pushed
-- [ ] Basic understanding of AWS services
+- [ ] Git repository with latest code
+- [ ] Basic understanding of Kubernetes concepts
+- [ ] At least 2GB of free disk space
 
 ---
 
@@ -56,21 +57,21 @@ Don't use the root account for daily work. Create an IAM user:
 3. Username: `skate-admin`
 4. Check **"Provide user access to the AWS Management Console"**
 5. Select **"I want to create an IAM user"**
-6. Set a console password: %UUtB1+Q
+6. Set a console password
 7. Click **Next**
 8. Select **"Attach policies directly"**
 9. Attach these policies:
-   - `AmazonECS_FullAccess`
+   - `AmazonEKSClusterPolicy`
+   - `AmazonEKSServicePolicy`
    - `AmazonEC2ContainerRegistryFullAccess`
    - `AmazonRDSFullAccess`
-   - `ElasticLoadBalancingFullAccess`
    - `AmazonVPCFullAccess`
    - `AmazonElastiCacheFullAccess`
    - `IAMFullAccess`
    - `CloudWatchFullAccess`
+   - `AmazonEC2FullAccess`
 10. Click **Create user**
 11. Save the sign-in URL and credentials securely
-https://165787402199.signin.aws.amazon.com/console
 
 ### 2.4 Create Access Keys for CLI
 
@@ -109,20 +110,50 @@ Verify installation:
 aws --version
 ```
 
-### 3.2 ECS CLI (Optional but helpful)
-
-```bash
-sudo curl -Lo /usr/local/bin/ecs-cli https://amazon-ecs-cli.s3.amazonaws.com/ecs-cli-linux-amd64-latest
-sudo chmod +x /usr/local/bin/ecs-cli
-ecs-cli --version
-```
-
-### 3.3 Session Manager Plugin (for debugging)
+### 3.2 kubectl (Kubernetes CLI)
 
 **Linux:**
 ```bash
-curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
-sudo dpkg -i session-manager-plugin.deb
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl
+sudo mv kubectl /usr/local/bin/
+kubectl version --client
+```
+
+**macOS:**
+```bash
+brew install kubectl
+```
+
+**Windows:**
+```powershell
+choco install kubernetes-cli
+```
+
+### 3.3 eksctl (EKS Cluster Manager)
+
+**Linux/macOS:**
+```bash
+curl -sL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+sudo mv /tmp/eksctl /usr/local/bin
+eksctl version
+```
+
+**Windows:**
+```powershell
+choco install eksctl
+```
+
+### 3.4 Helm (Kubernetes Package Manager)
+
+**Linux/macOS:**
+```bash
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+**Windows:**
+```powershell
+choco install kubernetes-helm
 ```
 
 ---
@@ -151,15 +182,12 @@ You should see your account ID and IAM user ARN.
 
 ---
 
-## 5. Create AWS Infrastructure
+## 5. Create Supporting Infrastructure
 
-We'll create the infrastructure in this order:
-1. VPC and Networking
-2. RDS PostgreSQL databases
-3. ElastiCache Redis
-4. ECR repositories
-5. ECS Cluster
-6. Application Load Balancer
+We'll create infrastructure that EKS will use:
+1. RDS PostgreSQL databases
+2. ElastiCache Redis
+3. ECR repositories
 
 ### 5.1 Set Environment Variables
 
@@ -169,7 +197,9 @@ export PROJECT_NAME=skate-spots
 export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ```
 
-### 5.2 Create VPC and Networking
+### 5.2 Create VPC for EKS (eksctl will handle this)
+
+eksctl will create a VPC automatically, but if you want to use existing infrastructure:
 
 ```bash
 # Create VPC
@@ -178,236 +208,232 @@ VPC_ID=$(aws ec2 create-vpc \
   --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${PROJECT_NAME}-vpc}]" \
   --query 'Vpc.VpcId' --output text)
 
-echo "VPC ID: $VPC_ID"
-
-# Enable DNS hostnames
 aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-hostnames
 
-# Create Internet Gateway
-IGW_ID=$(aws ec2 create-internet-gateway \
-  --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${PROJECT_NAME}-igw}]" \
-  --query 'InternetGateway.InternetGatewayId' --output text)
-
-aws ec2 attach-internet-gateway --vpc-id $VPC_ID --internet-gateway-id $IGW_ID
-
-# Create public subnets (for load balancer)
-PUBLIC_SUBNET_1=$(aws ec2 create-subnet \
-  --vpc-id $VPC_ID \
-  --cidr-block 10.0.1.0/24 \
-  --availability-zone ${AWS_REGION}a \
-  --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${PROJECT_NAME}-public-1}]" \
-  --query 'Subnet.SubnetId' --output text)
-
-PUBLIC_SUBNET_2=$(aws ec2 create-subnet \
-  --vpc-id $VPC_ID \
-  --cidr-block 10.0.2.0/24 \
-  --availability-zone ${AWS_REGION}b \
-  --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${PROJECT_NAME}-public-2}]" \
-  --query 'Subnet.SubnetId' --output text)
-
-# Enable auto-assign public IP
-aws ec2 modify-subnet-attribute --subnet-id $PUBLIC_SUBNET_1 --map-public-ip-on-launch
-aws ec2 modify-subnet-attribute --subnet-id $PUBLIC_SUBNET_2 --map-public-ip-on-launch
-
-# Create private subnets (for services and databases)
-PRIVATE_SUBNET_1=$(aws ec2 create-subnet \
-  --vpc-id $VPC_ID \
-  --cidr-block 10.0.10.0/24 \
-  --availability-zone ${AWS_REGION}a \
-  --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${PROJECT_NAME}-private-1}]" \
-  --query 'Subnet.SubnetId' --output text)
-
-PRIVATE_SUBNET_2=$(aws ec2 create-subnet \
-  --vpc-id $VPC_ID \
-  --cidr-block 10.0.11.0/24 \
-  --availability-zone ${AWS_REGION}b \
-  --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${PROJECT_NAME}-private-2}]" \
-  --query 'Subnet.SubnetId' --output text)
-
-# Create route table for public subnets
-PUBLIC_RT=$(aws ec2 create-route-table \
-  --vpc-id $VPC_ID \
-  --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT_NAME}-public-rt}]" \
-  --query 'RouteTable.RouteTableId' --output text)
-
-aws ec2 create-route --route-table-id $PUBLIC_RT --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID
-aws ec2 associate-route-table --route-table-id $PUBLIC_RT --subnet-id $PUBLIC_SUBNET_1
-aws ec2 associate-route-table --route-table-id $PUBLIC_RT --subnet-id $PUBLIC_SUBNET_2
-
-# Create NAT Gateway for private subnets (allows outbound internet)
-EIP_ALLOC=$(aws ec2 allocate-address --domain vpc --query 'AllocationId' --output text)
-
-NAT_GW=$(aws ec2 create-nat-gateway \
-  --subnet-id $PUBLIC_SUBNET_1 \
-  --allocation-id $EIP_ALLOC \
-  --tag-specifications "ResourceType=natgateway,Tags=[{Key=Name,Value=${PROJECT_NAME}-nat}]" \
-  --query 'NatGateway.NatGatewayId' --output text)
-
-echo "Waiting for NAT Gateway to become available..."
-aws ec2 wait nat-gateway-available --nat-gateway-ids $NAT_GW
-
-# Create route table for private subnets
-PRIVATE_RT=$(aws ec2 create-route-table \
-  --vpc-id $VPC_ID \
-  --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT_NAME}-private-rt}]" \
-  --query 'RouteTable.RouteTableId' --output text)
-
-aws ec2 create-route --route-table-id $PRIVATE_RT --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $NAT_GW
-aws ec2 associate-route-table --route-table-id $PRIVATE_RT --subnet-id $PRIVATE_SUBNET_1
-aws ec2 associate-route-table --route-table-id $PRIVATE_RT --subnet-id $PRIVATE_SUBNET_2
-
-echo "VPC Setup Complete!"
-echo "VPC_ID=$VPC_ID"
-echo "PUBLIC_SUBNET_1=$PUBLIC_SUBNET_1"
-echo "PUBLIC_SUBNET_2=$PUBLIC_SUBNET_2"
-echo "PRIVATE_SUBNET_1=$PRIVATE_SUBNET_1"
-echo "PRIVATE_SUBNET_2=$PRIVATE_SUBNET_2"
+echo "VPC ID: $VPC_ID"
 ```
 
-**Save these IDs!** You'll need them for later steps.
+### 5.3 Create RDS PostgreSQL Databases
 
-### 5.3 Create Security Groups
+First, create a DB subnet group (using the subnets that eksctl will create, or create them manually):
 
 ```bash
-# ALB Security Group (public access on 80/443)
-ALB_SG=$(aws ec2 create-security-group \
-  --group-name ${PROJECT_NAME}-alb-sg \
-  --description "Security group for ALB" \
-  --vpc-id $VPC_ID \
-  --query 'GroupId' --output text)
-
-aws ec2 authorize-security-group-ingress --group-id $ALB_SG --protocol tcp --port 80 --cidr 0.0.0.0/0
-aws ec2 authorize-security-group-ingress --group-id $ALB_SG --protocol tcp --port 443 --cidr 0.0.0.0/0
-
-# ECS Services Security Group
-ECS_SG=$(aws ec2 create-security-group \
-  --group-name ${PROJECT_NAME}-ecs-sg \
-  --description "Security group for ECS services" \
-  --vpc-id $VPC_ID \
-  --query 'GroupId' --output text)
-
-# Allow traffic from ALB to ECS services (ports 8070-8089)
-aws ec2 authorize-security-group-ingress --group-id $ECS_SG --protocol tcp --port 8070-8089 --source-group $ALB_SG
-# Allow internal communication between services
-aws ec2 authorize-security-group-ingress --group-id $ECS_SG --protocol tcp --port 8070-8089 --source-group $ECS_SG
-
-# Database Security Group
-DB_SG=$(aws ec2 create-security-group \
-  --group-name ${PROJECT_NAME}-db-sg \
-  --description "Security group for RDS" \
-  --vpc-id $VPC_ID \
-  --query 'GroupId' --output text)
-
-aws ec2 authorize-security-group-ingress --group-id $DB_SG --protocol tcp --port 5432 --source-group $ECS_SG
-
-# Redis Security Group
-REDIS_SG=$(aws ec2 create-security-group \
-  --group-name ${PROJECT_NAME}-redis-sg \
-  --description "Security group for ElastiCache Redis" \
-  --vpc-id $VPC_ID \
-  --query 'GroupId' --output text)
-
-aws ec2 authorize-security-group-ingress --group-id $REDIS_SG --protocol tcp --port 6379 --source-group $ECS_SG
-
-echo "Security Groups Created!"
-echo "ALB_SG=$ALB_SG"
-echo "ECS_SG=$ECS_SG"
-echo "DB_SG=$DB_SG"
-echo "REDIS_SG=$REDIS_SG"
+# Wait for EKS cluster creation to get subnet IDs, or create them now
+# We'll create databases after the EKS cluster is ready
 ```
 
-### 5.4 Create RDS PostgreSQL Databases
+### 5.4 Create ECR Repositories
 
 ```bash
+# Create repositories for each service
+for service in configserver eurekaserver gatewayserver spot-service skater-service session-service; do
+  aws ecr create-repository \
+    --repository-name ${PROJECT_NAME}/${service} \
+    --image-scanning-configuration scanOnPush=true \
+    --region $AWS_REGION
+done
+
+echo "ECR repositories created!"
+```
+
+---
+
+## 6. Create EKS Cluster
+
+### 6.1 Create Cluster with eksctl
+
+This single command creates the EKS cluster, VPC, subnets, security groups, and node groups:
+
+```bash
+eksctl create cluster \
+  --name ${PROJECT_NAME}-cluster \
+  --region $AWS_REGION \
+  --version 1.28 \
+  --nodegroup-name ${PROJECT_NAME}-nodes \
+  --node-type t3.medium \
+  --nodes 2 \
+  --nodes-min 2 \
+  --nodes-max 4 \
+  --managed \
+  --with-oidc \
+  --ssh-access \
+  --ssh-public-key ~/.ssh/id_rsa.pub
+```
+
+**Note:** This takes 15-20 minutes. Get a coffee! ☕
+
+**If you don't have an SSH key:**
+```bash
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+```
+
+Or create without SSH access:
+```bash
+eksctl create cluster \
+  --name ${PROJECT_NAME}-cluster \
+  --region $AWS_REGION \
+  --version 1.28 \
+  --nodegroup-name ${PROJECT_NAME}-nodes \
+  --node-type t3.medium \
+  --nodes 2 \
+  --nodes-min 2 \
+  --nodes-max 4 \
+  --managed
+```
+
+### 6.2 Verify Cluster
+
+```bash
+# Check cluster status
+eksctl get cluster --region $AWS_REGION
+
+# Verify kubectl is configured
+kubectl get nodes
+
+# You should see 2 nodes in Ready state
+```
+
+### 6.3 Get VPC and Subnet Information
+
+```bash
+# Get VPC ID created by eksctl
+VPC_ID=$(aws eks describe-cluster \
+  --name ${PROJECT_NAME}-cluster \
+  --region $AWS_REGION \
+  --query 'cluster.resourcesVpcConfig.vpcId' \
+  --output text)
+
+# Get subnet IDs
+SUBNET_IDS=$(aws eks describe-cluster \
+  --name ${PROJECT_NAME}-cluster \
+  --region $AWS_REGION \
+  --query 'cluster.resourcesVpcConfig.subnetIds' \
+  --output text)
+
+echo "VPC ID: $VPC_ID"
+echo "Subnet IDs: $SUBNET_IDS"
+```
+
+### 6.4 Create RDS Databases
+
+Now that we have the VPC, create the databases:
+
+```bash
+# Get private subnet IDs (filter by tag or CIDR)
+PRIVATE_SUBNETS=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:aws:cloudformation:logical-id,Values=SubnetPrivate*" \
+  --query 'Subnets[*].SubnetId' \
+  --output text)
+
+# If the above doesn't work, manually get two subnets from different AZs:
+SUBNET_1=$(echo $SUBNET_IDS | cut -d' ' -f1)
+SUBNET_2=$(echo $SUBNET_IDS | cut -d' ' -f2)
+
 # Create DB subnet group
 aws rds create-db-subnet-group \
   --db-subnet-group-name ${PROJECT_NAME}-db-subnet \
   --db-subnet-group-description "Subnet group for Skate Spots databases" \
-  --subnet-ids $PRIVATE_SUBNET_1 $PRIVATE_SUBNET_2
+  --subnet-ids $SUBNET_1 $SUBNET_2 \
+  --region $AWS_REGION
 
-# Create Spot Database
-aws rds create-db-instance \
-  --db-instance-identifier ${PROJECT_NAME}-spot-db \
-  --db-instance-class db.t3.micro \
-  --engine postgres \
-  --engine-version 14 \
-  --master-username postgres \
-  --master-user-password SpotDbPassword123! \
-  --allocated-storage 20 \
-  --db-name spot_dev \
-  --vpc-security-group-ids $DB_SG \
-  --db-subnet-group-name ${PROJECT_NAME}-db-subnet \
-  --no-publicly-accessible \
-  --backup-retention-period 0
+# Get EKS cluster security group
+CLUSTER_SG=$(aws eks describe-cluster \
+  --name ${PROJECT_NAME}-cluster \
+  --region $AWS_REGION \
+  --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' \
+  --output text)
 
-# Create Skater Database
-aws rds create-db-instance \
-  --db-instance-identifier ${PROJECT_NAME}-skater-db \
-  --db-instance-class db.t3.micro \
-  --engine postgres \
-  --engine-version 14 \
-  --master-username postgres \
-  --master-user-password SkaterDbPassword123! \
-  --allocated-storage 20 \
-  --db-name skater_dev \
-  --vpc-security-group-ids $DB_SG \
-  --db-subnet-group-name ${PROJECT_NAME}-db-subnet \
-  --no-publicly-accessible \
-  --backup-retention-period 0
+# Create DB security group
+DB_SG=$(aws ec2 create-security-group \
+  --group-name ${PROJECT_NAME}-db-sg \
+  --description "Security group for RDS" \
+  --vpc-id $VPC_ID \
+  --region $AWS_REGION \
+  --query 'GroupId' --output text)
 
-# Create Session Database
-aws rds create-db-instance \
-  --db-instance-identifier ${PROJECT_NAME}-session-db \
-  --db-instance-class db.t3.micro \
-  --engine postgres \
-  --engine-version 14 \
-  --master-username postgres \
-  --master-user-password SessionDbPassword123! \
-  --allocated-storage 20 \
-  --db-name session_dev \
-  --vpc-security-group-ids $DB_SG \
-  --db-subnet-group-name ${PROJECT_NAME}-db-subnet \
-  --no-publicly-accessible \
-  --backup-retention-period 0
+# Allow access from EKS cluster
+aws ec2 authorize-security-group-ingress \
+  --group-id $DB_SG \
+  --protocol tcp \
+  --port 5432 \
+  --source-group $CLUSTER_SG \
+  --region $AWS_REGION
 
-echo "RDS instances are being created. This takes 5-10 minutes..."
-echo "Check status with: aws rds describe-db-instances --query 'DBInstances[*].[DBInstanceIdentifier,DBInstanceStatus]'"
+# Create databases
+for db in spot skater session; do
+  aws rds create-db-instance \
+    --db-instance-identifier ${PROJECT_NAME}-${db}-db \
+    --db-instance-class db.t3.micro \
+    --engine postgres \
+    --engine-version 14 \
+    --master-username postgres \
+    --master-user-password ${db^}DbPassword123! \
+    --allocated-storage 20 \
+    --db-name ${db}_dev \
+    --vpc-security-group-ids $DB_SG \
+    --db-subnet-group-name ${PROJECT_NAME}-db-subnet \
+    --no-publicly-accessible \
+    --backup-retention-period 0 \
+    --region $AWS_REGION
+done
+
+echo "Databases are being created (takes 5-10 minutes)..."
 ```
 
-Wait for databases to be available:
+Wait for databases to be ready:
 ```bash
-aws rds wait db-instance-available --db-instance-identifier ${PROJECT_NAME}-spot-db
-aws rds wait db-instance-available --db-instance-identifier ${PROJECT_NAME}-skater-db
-aws rds wait db-instance-available --db-instance-identifier ${PROJECT_NAME}-session-db
+aws rds wait db-instance-available --db-instance-identifier ${PROJECT_NAME}-spot-db --region $AWS_REGION
+aws rds wait db-instance-available --db-instance-identifier ${PROJECT_NAME}-skater-db --region $AWS_REGION
+aws rds wait db-instance-available --db-instance-identifier ${PROJECT_NAME}-session-db --region $AWS_REGION
 ```
 
 Get database endpoints:
 ```bash
 SPOT_DB_HOST=$(aws rds describe-db-instances \
   --db-instance-identifier ${PROJECT_NAME}-spot-db \
+  --region $AWS_REGION \
   --query 'DBInstances[0].Endpoint.Address' --output text)
 
 SKATER_DB_HOST=$(aws rds describe-db-instances \
   --db-instance-identifier ${PROJECT_NAME}-skater-db \
+  --region $AWS_REGION \
   --query 'DBInstances[0].Endpoint.Address' --output text)
 
 SESSION_DB_HOST=$(aws rds describe-db-instances \
   --db-instance-identifier ${PROJECT_NAME}-session-db \
+  --region $AWS_REGION \
   --query 'DBInstances[0].Endpoint.Address' --output text)
 
+echo "Database endpoints:"
 echo "SPOT_DB_HOST=$SPOT_DB_HOST"
 echo "SKATER_DB_HOST=$SKATER_DB_HOST"
 echo "SESSION_DB_HOST=$SESSION_DB_HOST"
 ```
 
-### 5.5 Create ElastiCache Redis
+### 6.5 Create ElastiCache Redis
 
 ```bash
+# Create Redis security group
+REDIS_SG=$(aws ec2 create-security-group \
+  --group-name ${PROJECT_NAME}-redis-sg \
+  --description "Security group for Redis" \
+  --vpc-id $VPC_ID \
+  --region $AWS_REGION \
+  --query 'GroupId' --output text)
+
+aws ec2 authorize-security-group-ingress \
+  --group-id $REDIS_SG \
+  --protocol tcp \
+  --port 6379 \
+  --source-group $CLUSTER_SG \
+  --region $AWS_REGION
+
 # Create cache subnet group
 aws elasticache create-cache-subnet-group \
   --cache-subnet-group-name ${PROJECT_NAME}-redis-subnet \
   --cache-subnet-group-description "Subnet group for Redis" \
-  --subnet-ids $PRIVATE_SUBNET_1 $PRIVATE_SUBNET_2
+  --subnet-ids $SUBNET_1 $SUBNET_2 \
+  --region $AWS_REGION
 
 # Create Redis cluster
 aws elasticache create-cache-cluster \
@@ -416,370 +442,462 @@ aws elasticache create-cache-cluster \
   --engine redis \
   --num-cache-nodes 1 \
   --cache-subnet-group-name ${PROJECT_NAME}-redis-subnet \
-  --security-group-ids $REDIS_SG
+  --security-group-ids $REDIS_SG \
+  --region $AWS_REGION
 
 echo "Redis cluster is being created..."
 ```
 
-Get Redis endpoint when ready:
+Get Redis endpoint:
 ```bash
+# Wait for it to be available
+sleep 300
+
 REDIS_HOST=$(aws elasticache describe-cache-clusters \
   --cache-cluster-id ${PROJECT_NAME}-redis \
   --show-cache-node-info \
+  --region $AWS_REGION \
   --query 'CacheClusters[0].CacheNodes[0].Endpoint.Address' --output text)
 
 echo "REDIS_HOST=$REDIS_HOST"
 ```
 
-### 5.6 Create ECR Repositories
-
-```bash
-# Create repositories for each service
-for service in configserver eurekaserver gatewayserver spot-service skater-service session-service keycloak; do
-  aws ecr create-repository \
-    --repository-name ${PROJECT_NAME}/${service} \
-    --image-scanning-configuration scanOnPush=true
-done
-
-echo "ECR repositories created!"
-```
-
-### 5.7 Create ECS Cluster
-
-```bash
-aws ecs create-cluster \
-  --cluster-name ${PROJECT_NAME}-cluster \
-  --capacity-providers FARGATE FARGATE_SPOT \
-  --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1
-
-echo "ECS Cluster created!"
-```
-
 ---
 
-## 6. Push Docker Images to ECR
+## 7. Push Docker Images to ECR
 
-### 6.1 Authenticate Docker to ECR
+### 7.1 Authenticate Docker to ECR
 
 ```bash
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+aws ecr get-login-password --region $AWS_REGION | \
+  docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 ```
 
-### 6.2 Build and Push Images
+### 7.2 Build and Push Images
 
 From the project root directory:
 
 ```bash
-# Build all services
+# Build all services with Maven
 mvn clean package -DskipTests
 
-# Build Docker images
-mvn dockerfile:build -DskipTests
-
-# Tag and push each image
+# Set ECR registry URL
 ECR_REGISTRY=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-# Config Server
-docker tag skate/configserver:0.0.1-SNAPSHOT $ECR_REGISTRY/${PROJECT_NAME}/configserver:latest
+# Build and push Config Server
+cd configserver
+docker build --build-arg JAR_FILE=target/configserver-0.0.1-SNAPSHOT.jar \
+  -t $ECR_REGISTRY/${PROJECT_NAME}/configserver:latest .
 docker push $ECR_REGISTRY/${PROJECT_NAME}/configserver:latest
+cd ..
 
-# Eureka Server
-docker tag skate/eurekaserver:0.0.1-SNAPSHOT $ECR_REGISTRY/${PROJECT_NAME}/eurekaserver:latest
+# Build and push Eureka Server
+cd eurekaserver
+docker build --build-arg JAR_FILE=target/eurekaserver-0.0.1-SNAPSHOT.jar \
+  -t $ECR_REGISTRY/${PROJECT_NAME}/eurekaserver:latest .
 docker push $ECR_REGISTRY/${PROJECT_NAME}/eurekaserver:latest
+cd ..
 
-# Gateway Server
-docker tag skate/gatewayserver:0.0.1-SNAPSHOT $ECR_REGISTRY/${PROJECT_NAME}/gatewayserver:latest
+# Build and push Gateway Server
+cd gatewayserver
+docker build --build-arg JAR_FILE=target/gatewayserver-0.0.1-SNAPSHOT.jar \
+  -t $ECR_REGISTRY/${PROJECT_NAME}/gatewayserver:latest .
 docker push $ECR_REGISTRY/${PROJECT_NAME}/gatewayserver:latest
+cd ..
 
-# Spot Service
-docker tag skate/spot-service:0.0.1-SNAPSHOT $ECR_REGISTRY/${PROJECT_NAME}/spot-service:latest
+# Build and push Spot Service
+cd spot-service
+docker build --build-arg JAR_FILE=target/spot-service-0.0.1-SNAPSHOT.jar \
+  -t $ECR_REGISTRY/${PROJECT_NAME}/spot-service:latest .
 docker push $ECR_REGISTRY/${PROJECT_NAME}/spot-service:latest
+cd ..
 
-# Skater Service
-docker tag skate/skater-service:0.0.1-SNAPSHOT $ECR_REGISTRY/${PROJECT_NAME}/skater-service:latest
+# Build and push Skater Service
+cd skater-service
+docker build --build-arg JAR_FILE=target/skater-service-0.0.1-SNAPSHOT.jar \
+  -t $ECR_REGISTRY/${PROJECT_NAME}/skater-service:latest .
 docker push $ECR_REGISTRY/${PROJECT_NAME}/skater-service:latest
+cd ..
 
-# Session Service
-docker tag skate/session-service:0.0.1-SNAPSHOT $ECR_REGISTRY/${PROJECT_NAME}/session-service:latest
+# Build and push Session Service
+cd session-service
+docker build --build-arg JAR_FILE=target/session-service-0.0.1-SNAPSHOT.jar \
+  -t $ECR_REGISTRY/${PROJECT_NAME}/session-service:latest .
 docker push $ECR_REGISTRY/${PROJECT_NAME}/session-service:latest
+cd ..
 
 echo "All images pushed to ECR!"
 ```
 
-### 6.3 Push Keycloak Image
+### 7.3 Pull and Push Keycloak Image
 
 ```bash
 docker pull quay.io/keycloak/keycloak:23.0
 docker tag quay.io/keycloak/keycloak:23.0 $ECR_REGISTRY/${PROJECT_NAME}/keycloak:23.0
+aws ecr create-repository --repository-name ${PROJECT_NAME}/keycloak --region $AWS_REGION 2>/dev/null || true
 docker push $ECR_REGISTRY/${PROJECT_NAME}/keycloak:23.0
 ```
 
 ---
 
-## 7. Deploy Services to ECS
+## 8. Deploy to Kubernetes
 
-### 7.1 Create IAM Roles for ECS
+Kubernetes will be used to deploy the services. The textbook should provide Kubernetes manifests, but I'll provide instructions for creating them if needed.
 
-```bash
-# Create ECS Task Execution Role
-aws iam create-role \
-  --role-name ${PROJECT_NAME}-ecs-execution-role \
-  --assume-role-policy-document '{
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Principal": {"Service": "ecs-tasks.amazonaws.com"},
-      "Action": "sts:AssumeRole"
-    }]
-  }'
-
-aws iam attach-role-policy \
-  --role-name ${PROJECT_NAME}-ecs-execution-role \
-  --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-
-# Create ECS Task Role (for application permissions)
-aws iam create-role \
-  --role-name ${PROJECT_NAME}-ecs-task-role \
-  --assume-role-policy-document '{
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Principal": {"Service": "ecs-tasks.amazonaws.com"},
-      "Action": "sts:AssumeRole"
-    }]
-  }'
-```
-
-### 7.2 Create CloudWatch Log Groups
+### 8.1 Create Kubernetes Namespace
 
 ```bash
-for service in configserver eurekaserver gatewayserver spot-service skater-service session-service keycloak; do
-  aws logs create-log-group --log-group-name /ecs/${PROJECT_NAME}/${service}
-done
+kubectl create namespace skate-spots
+kubectl config set-context --current --namespace=skate-spots
 ```
 
-### 7.3 Create Task Definitions
+### 8.2 Create Secrets for Database Credentials
 
-Create a file `task-definitions/configserver.json`:
+```bash
+kubectl create secret generic db-credentials \
+  --from-literal=spot-db-password='SpotDbPassword123!' \
+  --from-literal=skater-db-password='SkaterDbPassword123!' \
+  --from-literal=session-db-password='SessionDbPassword123!' \
+  -n skate-spots
+```
 
-```json
-{
-  "family": "skate-spots-configserver",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "256",
-  "memory": "512",
-  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/skate-spots-ecs-execution-role",
-  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/skate-spots-ecs-task-role",
-  "containerDefinitions": [
-    {
-      "name": "configserver",
-      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/skate-spots/configserver:latest",
-      "essential": true,
-      "portMappings": [
-        {
-          "containerPort": 8089,
-          "protocol": "tcp"
-        }
-      ],
-      "environment": [
-        {"name": "SPRING_PROFILES_ACTIVE", "value": "native"},
-        {"name": "ENCRYPT_KEY", "value": "secretkey"}
-      ],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "/ecs/skate-spots/configserver",
-          "awslogs-region": "REGION",
-          "awslogs-stream-prefix": "ecs"
-        }
-      },
-      "healthCheck": {
-        "command": ["CMD-SHELL", "curl -f http://localhost:8089/actuator/health || exit 1"],
-        "interval": 30,
-        "timeout": 5,
-        "retries": 3,
-        "startPeriod": 60
+### 8.3 Create ConfigMap for Database Endpoints
+
+```bash
+kubectl create configmap db-endpoints \
+  --from-literal=SPOT_DB_HOST=$SPOT_DB_HOST \
+  --from-literal=SKATER_DB_HOST=$SKATER_DB_HOST \
+  --from-literal=SESSION_DB_HOST=$SESSION_DB_HOST \
+  --from-literal=REDIS_HOST=$REDIS_HOST \
+  -n skate-spots
+```
+
+### 8.4 Deploy Observability Stack (ELK + Zipkin)
+
+Your application uses the ELK stack (Elasticsearch, Logstash, Kibana) for logging and Zipkin for distributed tracing. Deploy these using Helm:
+
+#### 8.4.1 Add Helm Repositories
+
+```bash
+# Add Elastic helm repo for ELK stack
+helm repo add elastic https://helm.elastic.co
+
+# Add OpenZipkin repo
+helm repo add openzipkin https://openzipkin.github.io/zipkin
+
+# Update repos
+helm repo update
+```
+
+#### 8.4.2 Deploy Elasticsearch
+
+```bash
+# Deploy Elasticsearch (single node for dev/test)
+helm install elasticsearch elastic/elasticsearch \
+  --namespace skate-spots \
+  --set replicas=1 \
+  --set minimumMasterNodes=1 \
+  --set resources.requests.cpu="500m" \
+  --set resources.requests.memory="1Gi" \
+  --set resources.limits.cpu="1000m" \
+  --set resources.limits.memory="2Gi"
+
+# Wait for Elasticsearch to be ready (takes 2-3 minutes)
+kubectl wait --for=condition=ready pod -l app=elasticsearch-master -n skate-spots --timeout=300s
+
+# Verify Elasticsearch is accessible
+kubectl run curl-test --image=curlimages/curl -i --rm --restart=Never -n skate-spots -- \
+  curl -s http://elasticsearch-master:9200
+```
+
+#### 8.4.3 Deploy Logstash
+
+```bash
+# Create Logstash configuration ConfigMap
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: skate-spots
+data:
+  logstash.conf: |
+    input {
+      tcp {
+        port => 5000
+        codec => json
       }
     }
-  ]
+
+    filter {
+      # Add any custom filters here
+      mutate {
+        add_field => { "[@metadata][target_index]" => "logs-%{service_name}-%{+YYYY.MM.dd}" }
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["elasticsearch-master:9200"]
+        index => "%{[@metadata][target_index]}"
+      }
+      stdout {
+        codec => rubydebug
+      }
+    }
+EOF
+
+# Deploy Logstash
+helm install logstash elastic/logstash \
+  --namespace skate-spots \
+  --set replicas=1 \
+  --set service.type=ClusterIP \
+  --set service.ports[0].name=tcp \
+  --set service.ports[0].port=5000 \
+  --set service.ports[0].protocol=TCP \
+  --set logstashConfig."logstash\.yml"="http.host: 0.0.0.0" \
+  --set logstashPipeline."logstash\.conf"="$(cat <<'HEREDOC'
+input {
+  tcp {
+    port => 5000
+    codec => json
+  }
 }
+
+filter {
+  mutate {
+    add_field => { "[@metadata][target_index]" => "logs-%{service_name}-%{+YYYY.MM.dd}" }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["elasticsearch-master:9200"]
+    index => "%{[@metadata][target_index]}"
+  }
+  stdout {
+    codec => rubydebug
+  }
+}
+HEREDOC
+)"
+
+# Verify Logstash is running
+kubectl get pods -l app=logstash-logstash -n skate-spots
 ```
 
-I'll provide a script to generate all task definitions with your actual values:
+#### 8.4.4 Deploy Kibana
 
 ```bash
-# Create task-definitions directory
-mkdir -p task-definitions
+# Deploy Kibana
+helm install kibana elastic/kibana \
+  --namespace skate-spots \
+  --set replicas=1 \
+  --set service.type=LoadBalancer \
+  --set resources.requests.cpu="500m" \
+  --set resources.requests.memory="1Gi"
 
-# Generate task definitions (run this script)
-cat > generate-task-defs.sh << 'SCRIPT'
-#!/bin/bash
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-REGION=${AWS_REGION:-us-east-1}
-PROJECT_NAME=skate-spots
+# Wait for Kibana to be ready
+kubectl wait --for=condition=ready pod -l app=kibana -n skate-spots --timeout=300s
 
-# Replace placeholders in task definitions
-for file in task-definitions/*.json; do
-  sed -i "s/ACCOUNT_ID/$ACCOUNT_ID/g" $file
-  sed -i "s/REGION/$REGION/g" $file
-done
-SCRIPT
+# Get Kibana URL
+KIBANA_URL=$(kubectl get svc kibana-kibana -n skate-spots \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-chmod +x generate-task-defs.sh
+echo "Kibana URL: http://$KIBANA_URL:5601"
 ```
 
-### 7.4 Register Task Definitions
+#### 8.4.5 Deploy Zipkin
 
 ```bash
-# Register each task definition
-aws ecs register-task-definition --cli-input-json file://task-definitions/configserver.json
-aws ecs register-task-definition --cli-input-json file://task-definitions/eurekaserver.json
-aws ecs register-task-definition --cli-input-json file://task-definitions/keycloak.json
-aws ecs register-task-definition --cli-input-json file://task-definitions/gatewayserver.json
-aws ecs register-task-definition --cli-input-json file://task-definitions/spot-service.json
-aws ecs register-task-definition --cli-input-json file://task-definitions/skater-service.json
-aws ecs register-task-definition --cli-input-json file://task-definitions/session-service.json
-```
-
-### 7.5 Create ECS Services
-
-Deploy services in order (respecting dependencies):
-
-```bash
-# 1. Config Server (no dependencies)
-aws ecs create-service \
-  --cluster ${PROJECT_NAME}-cluster \
-  --service-name configserver \
-  --task-definition ${PROJECT_NAME}-configserver \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNET_1,$PRIVATE_SUBNET_2],securityGroups=[$ECS_SG],assignPublicIp=DISABLED}" \
-  --service-connect-configuration '{
-    "enabled": true,
-    "namespace": "skate-spots",
-    "services": [{
-      "portName": "configserver",
-      "clientAliases": [{"port": 8089, "dnsName": "configserver"}]
-    }]
-  }'
-
-# Wait for Config Server to be healthy before proceeding
-echo "Waiting for Config Server to be healthy..."
-sleep 120
-
-# 2. Eureka Server
-aws ecs create-service \
-  --cluster ${PROJECT_NAME}-cluster \
-  --service-name eurekaserver \
-  --task-definition ${PROJECT_NAME}-eurekaserver \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNET_1,$PRIVATE_SUBNET_2],securityGroups=[$ECS_SG],assignPublicIp=DISABLED}"
-
-# 3. Keycloak
-aws ecs create-service \
-  --cluster ${PROJECT_NAME}-cluster \
-  --service-name keycloak \
-  --task-definition ${PROJECT_NAME}-keycloak \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNET_1,$PRIVATE_SUBNET_2],securityGroups=[$ECS_SG],assignPublicIp=DISABLED}"
-
-# Wait for infrastructure services
-echo "Waiting for Eureka and Keycloak..."
-sleep 120
-
-# 4. Business Services (can be deployed in parallel)
-for service in spot-service skater-service session-service; do
-  aws ecs create-service \
-    --cluster ${PROJECT_NAME}-cluster \
-    --service-name $service \
-    --task-definition ${PROJECT_NAME}-$service \
-    --desired-count 1 \
-    --launch-type FARGATE \
-    --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNET_1,$PRIVATE_SUBNET_2],securityGroups=[$ECS_SG],assignPublicIp=DISABLED}"
-done
-
-# 5. Gateway Server (last, needs all services registered)
-sleep 60
-aws ecs create-service \
-  --cluster ${PROJECT_NAME}-cluster \
-  --service-name gatewayserver \
-  --task-definition ${PROJECT_NAME}-gatewayserver \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNET_1,$PRIVATE_SUBNET_2],securityGroups=[$ECS_SG],assignPublicIp=DISABLED}"
-```
-
+# Deploy Zipkin for distributed tracing
+kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zipkin
+  namespace: skate-spots
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zipkin
+  template:
+    metadata:
+      labels:
+        app: zipkin
+    spec:
+      containers:
+      - name: zipkin
+        image: openzipkin/zipkin:latest
+        ports:
+        - containerPort: 9411
+        env:
+        - name: STORAGE_TYPE
+          value: "elasticsearch"
+        - name: ES_HOSTS
+          value: "http://elasticsearch-master:9200"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zipkin
+  namespace: skate-spots
+spec:
+  type: LoadBalancer
+  selector:
+    app: zipkin
+  ports:
+  - port: 9411
+    targetPort: 9411
+EOF
 
-## 8. Configure Networking & Load Balancer
+# Wait for Zipkin to be ready
+kubectl wait --for=condition=ready pod -l app=zipkin -n skate-spots --timeout=120s
 
-### 8.1 Create Application Load Balancer
+# Get Zipkin URL
+ZIPKIN_URL=$(kubectl get svc zipkin -n skate-spots \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-```bash
-# Create ALB
-ALB_ARN=$(aws elbv2 create-load-balancer \
-  --name ${PROJECT_NAME}-alb \
-  --subnets $PUBLIC_SUBNET_1 $PUBLIC_SUBNET_2 \
-  --security-groups $ALB_SG \
-  --scheme internet-facing \
-  --type application \
-  --query 'LoadBalancers[0].LoadBalancerArn' --output text)
-
-ALB_DNS=$(aws elbv2 describe-load-balancers \
-  --load-balancer-arns $ALB_ARN \
-  --query 'LoadBalancers[0].DNSName' --output text)
-
-echo "ALB DNS: $ALB_DNS"
-
-# Create Target Group for Gateway
-GATEWAY_TG=$(aws elbv2 create-target-group \
-  --name ${PROJECT_NAME}-gateway-tg \
-  --protocol HTTP \
-  --port 8072 \
-  --vpc-id $VPC_ID \
-  --target-type ip \
-  --health-check-path /actuator/health \
-  --health-check-interval-seconds 30 \
-  --query 'TargetGroups[0].TargetGroupArn' --output text)
-
-# Create Listener
-aws elbv2 create-listener \
-  --load-balancer-arn $ALB_ARN \
-  --protocol HTTP \
-  --port 80 \
-  --default-actions Type=forward,TargetGroupArn=$GATEWAY_TG
+echo "Zipkin URL: http://$ZIPKIN_URL:9411"
 ```
 
-### 8.2 Update Gateway Service with Load Balancer
+#### 8.4.6 Verify Observability Stack
 
 ```bash
-aws ecs update-service \
-  --cluster ${PROJECT_NAME}-cluster \
-  --service gatewayserver \
-  --load-balancers targetGroupArn=$GATEWAY_TG,containerName=gatewayserver,containerPort=8072
+# Check all pods are running
+kubectl get pods -n skate-spots | grep -E "elasticsearch|logstash|kibana|zipkin"
+
+# You should see:
+# - elasticsearch-master-0 (Running)
+# - logstash-logstash-0 (Running)
+# - kibana-kibana-xxxxx (Running)
+# - zipkin-xxxxx (Running)
+
+# Test connectivity from within the cluster
+kubectl run test-connectivity --image=curlimages/curl -i --rm --restart=Never -n skate-spots -- sh -c "
+  echo 'Testing Elasticsearch...'
+  curl -s http://elasticsearch-master:9200
+  echo -e '\n\nTesting Zipkin...'
+  curl -s http://zipkin:9411/health
+"
+```
+
+Your services are already configured to send:
+- **Logs** → Logstash:5000 → Elasticsearch → view in Kibana
+- **Traces** → Zipkin:9411 → stored in Elasticsearch → view in Zipkin UI
+
+### 8.5 Deploy Application Services
+
+The textbook should provide Kubernetes manifests (YAML files) for deployments and services. They typically look like:
+
+**Example structure for a Kubernetes deployment:**
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: configserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: configserver
+  template:
+    metadata:
+      labels:
+        app: configserver
+    spec:
+      containers:
+      - name: configserver
+        image: ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/skate-spots/configserver:latest
+        ports:
+        - containerPort: 8089
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: configserver
+spec:
+  selector:
+    app: configserver
+  ports:
+  - port: 8089
+    targetPort: 8089
+```
+
+**Apply the manifests from your textbook or create them based on the pattern above:**
+
+```bash
+# If you have manifests in k8s/ directory:
+kubectl apply -f k8s/
+
+# Or apply individually in order:
+kubectl apply -f k8s/configserver.yaml
+kubectl apply -f k8s/eurekaserver.yaml
+kubectl apply -f k8s/keycloak.yaml
+kubectl apply -f k8s/spot-service.yaml
+kubectl apply -f k8s/skater-service.yaml
+kubectl apply -f k8s/session-service.yaml
+kubectl apply -f k8s/gatewayserver.yaml
+```
+
+### 8.6 Expose Gateway with LoadBalancer
+
+```bash
+kubectl expose deployment gatewayserver \
+  --type=LoadBalancer \
+  --name=gatewayserver-lb \
+  --port=80 \
+  --target-port=8072 \
+  -n skate-spots
+```
+
+Wait for the LoadBalancer to be provisioned:
+```bash
+kubectl get svc gatewayserver-lb -n skate-spots -w
+```
+
+Get the external URL:
+```bash
+GATEWAY_URL=$(kubectl get svc gatewayserver-lb -n skate-spots \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+echo "Gateway URL: http://$GATEWAY_URL"
 ```
 
 ---
 
 ## 9. Testing the Deployment
 
-### 9.1 Get the ALB DNS Name
+### 9.1 Check Pod Status
 
 ```bash
-ALB_DNS=$(aws elbv2 describe-load-balancers \
-  --names ${PROJECT_NAME}-alb \
-  --query 'LoadBalancers[0].DNSName' --output text)
-
-echo "Your API is available at: http://$ALB_DNS"
+kubectl get pods -n skate-spots
 ```
 
-### 9.2 Health Check
+All pods should be in `Running` state.
+
+### 9.2 View Logs
 
 ```bash
-curl http://$ALB_DNS/actuator/health
+# View logs for a specific pod
+kubectl logs -f deployment/gatewayserver -n skate-spots
+
+# View logs for all pods
+kubectl logs -l app=spot-service -n skate-spots
+```
+
+### 9.3 Test Health Endpoint
+
+```bash
+curl http://$GATEWAY_URL/actuator/health
 ```
 
 Expected response:
@@ -787,125 +905,120 @@ Expected response:
 {"status":"UP"}
 ```
 
-### 9.3 Get OAuth Token from Keycloak
-
-First, you need to expose Keycloak or use the internal endpoint. For testing, you can create a separate target group:
+### 9.4 Access Eureka Dashboard
 
 ```bash
-# Get a token (replace with your Keycloak endpoint)
-TOKEN=$(curl -X POST "http://$ALB_DNS/oauth2/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password" \
-  -d "client_id=skate-app" \
-  -d "client_secret=skate-app-secret" \
-  -d "username=tony_hawk" \
-  -d "password=password" | jq -r '.access_token')
-
-echo "Token: $TOKEN"
+curl http://$GATEWAY_URL/eureka
 ```
 
-### 9.4 Test API Endpoints
+Or open in browser: `http://$GATEWAY_URL/eureka`
+
+### 9.5 Test API Endpoints
+
+Follow the same testing procedures as in your textbook. The service discovery and routing work automatically in Kubernetes!
+
+### 9.6 Access Observability Dashboards
+
+Your deployment includes full observability with Kibana (logs) and Zipkin (traces):
+
+#### Access Kibana (View Logs)
 
 ```bash
-# Get all spots
-curl -H "Authorization: Bearer $TOKEN" http://$ALB_DNS/api/spots
+# Get Kibana URL
+KIBANA_URL=$(kubectl get svc kibana-kibana -n skate-spots \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-# Get skater info
-curl -H "Authorization: Bearer $TOKEN" http://$ALB_DNS/api/skater/me
-
-# Get sessions
-curl -H "Authorization: Bearer $TOKEN" http://$ALB_DNS/api/session
+echo "Kibana: http://$KIBANA_URL:5601"
 ```
 
-### 9.5 View Logs
+Open Kibana in your browser:
+1. Go to **Stack Management → Index Patterns**
+2. Create index pattern: `logs-*`
+3. Go to **Discover** to view logs from all services
+4. Filter by service: `service_name: "gatewayserver"` or `service_name: "spot-service"`
+
+#### Access Zipkin (View Distributed Traces)
 
 ```bash
-# View logs for a specific service
-aws logs tail /ecs/${PROJECT_NAME}/gatewayserver --follow
+# Get Zipkin URL
+ZIPKIN_URL=$(kubectl get svc zipkin -n skate-spots \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-# View logs for all services
-for service in configserver eurekaserver gatewayserver spot-service skater-service session-service; do
-  echo "=== $service ==="
-  aws logs tail /ecs/${PROJECT_NAME}/$service --since 1h
-done
+echo "Zipkin: http://$ZIPKIN_URL:9411"
 ```
 
-### 9.6 Check Service Status
+Open Zipkin in your browser:
+1. Click **Run Query** to see recent traces
+2. Click on any trace to see the full request flow through your microservices
+3. Use filters to find specific services or operations
 
-```bash
-# List all services
-aws ecs list-services --cluster ${PROJECT_NAME}-cluster
-
-# Describe a specific service
-aws ecs describe-services \
-  --cluster ${PROJECT_NAME}-cluster \
-  --services gatewayserver \
-  --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}'
-```
+**This matches your local development setup!** All logs and traces flow to the same stack.
 
 ---
 
 ## 10. Cleanup
 
-When you're done with the project, clean up to avoid charges:
+When you're done, clean up to avoid charges:
 
 ```bash
-# Delete ECS Services
-for service in gatewayserver spot-service skater-service session-service keycloak eurekaserver configserver; do
-  aws ecs update-service --cluster ${PROJECT_NAME}-cluster --service $service --desired-count 0
-  aws ecs delete-service --cluster ${PROJECT_NAME}-cluster --service $service --force
+# Delete Kubernetes resources
+kubectl delete namespace skate-spots
+
+# Delete LoadBalancer service (if not deleted with namespace)
+kubectl delete svc gatewayserver-lb -n skate-spots
+
+# Delete EKS cluster (this also deletes VPC, subnets, etc.)
+eksctl delete cluster --name ${PROJECT_NAME}-cluster --region $AWS_REGION
+
+# Delete RDS instances
+for db in spot skater session; do
+  aws rds delete-db-instance \
+    --db-instance-identifier ${PROJECT_NAME}-${db}-db \
+    --skip-final-snapshot \
+    --region $AWS_REGION
 done
 
-# Delete ECS Cluster
-aws ecs delete-cluster --cluster ${PROJECT_NAME}-cluster
+# Delete Redis cluster
+aws elasticache delete-cache-cluster \
+  --cache-cluster-id ${PROJECT_NAME}-redis \
+  --region $AWS_REGION
 
-# Delete Load Balancer
-aws elbv2 delete-load-balancer --load-balancer-arn $ALB_ARN
-aws elbv2 delete-target-group --target-group-arn $GATEWAY_TG
-
-# Delete RDS Instances (skip final snapshot for dev)
-aws rds delete-db-instance --db-instance-identifier ${PROJECT_NAME}-spot-db --skip-final-snapshot
-aws rds delete-db-instance --db-instance-identifier ${PROJECT_NAME}-skater-db --skip-final-snapshot
-aws rds delete-db-instance --db-instance-identifier ${PROJECT_NAME}-session-db --skip-final-snapshot
-
-# Delete ElastiCache
-aws elasticache delete-cache-cluster --cache-cluster-id ${PROJECT_NAME}-redis
-
-# Delete ECR Repositories
+# Delete ECR repositories
 for service in configserver eurekaserver gatewayserver spot-service skater-service session-service keycloak; do
-  aws ecr delete-repository --repository-name ${PROJECT_NAME}/${service} --force
+  aws ecr delete-repository \
+    --repository-name ${PROJECT_NAME}/${service} \
+    --force \
+    --region $AWS_REGION
 done
-
-# Delete NAT Gateway and release EIP
-aws ec2 delete-nat-gateway --nat-gateway-id $NAT_GW
-sleep 60
-aws ec2 release-address --allocation-id $EIP_ALLOC
-
-# Delete Security Groups
-aws ec2 delete-security-group --group-id $REDIS_SG
-aws ec2 delete-security-group --group-id $DB_SG
-aws ec2 delete-security-group --group-id $ECS_SG
-aws ec2 delete-security-group --group-id $ALB_SG
-
-# Delete Subnets
-aws ec2 delete-subnet --subnet-id $PRIVATE_SUBNET_2
-aws ec2 delete-subnet --subnet-id $PRIVATE_SUBNET_1
-aws ec2 delete-subnet --subnet-id $PUBLIC_SUBNET_2
-aws ec2 delete-subnet --subnet-id $PUBLIC_SUBNET_1
-
-# Detach and delete Internet Gateway
-aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
-aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
-
-# Delete Route Tables (non-main)
-aws ec2 delete-route-table --route-table-id $PRIVATE_RT
-aws ec2 delete-route-table --route-table-id $PUBLIC_RT
-
-# Delete VPC
-aws ec2 delete-vpc --vpc-id $VPC_ID
 
 echo "Cleanup complete!"
 ```
+
+---
+
+## Key Differences from ECS
+
+### Why EKS is Better for Microservices:
+
+1. **Automatic Service Discovery**
+   - In Kubernetes, services can find each other by name automatically
+   - `http://configserver:8089` works out of the box - no Service Connect needed!
+
+2. **Standard Configuration**
+   - Your Spring Boot configurations work without modification
+   - No need for task definitions or ECS-specific setup
+
+3. **Portability**
+   - Kubernetes is cloud-agnostic
+   - You can run the same manifests locally (Minikube) or on any cloud
+
+4. **Industry Standard**
+   - More documentation and community support
+   - Skills transfer to other environments
+
+5. **Better Scaling**
+   - Horizontal Pod Autoscaler (HPA) built-in
+   - More granular control over resources
 
 ---
 
@@ -913,109 +1026,51 @@ echo "Cleanup complete!"
 
 ### Common Issues
 
-**1. Services failing to start**
+**1. Pods stuck in Pending**
 ```bash
-# Check task stopped reasons
-aws ecs describe-tasks \
-  --cluster ${PROJECT_NAME}-cluster \
-  --tasks $(aws ecs list-tasks --cluster ${PROJECT_NAME}-cluster --service-name gatewayserver --query 'taskArns[0]' --output text)
+kubectl describe pod <pod-name> -n skate-spots
+# Check for resource constraints or image pull errors
 ```
 
-**2. Health checks failing**
-- Check CloudWatch logs for errors
-- Verify security groups allow traffic
-- Ensure database connections are configured correctly
-
-**3. Services can't find each other**
-- Verify Eureka is running and healthy
-- Check that service names in configuration match ECS service names
-- Review security group rules for internal communication
-
-**4. Database connection refused**
-- Verify RDS security group allows traffic from ECS security group
-- Check database endpoint is correctly configured in environment variables
-- Ensure database is in "available" state
-
-### Useful Commands
-
+**2. ImagePullBackOff error**
 ```bash
-# Get running task IPs
-aws ecs describe-tasks \
-  --cluster ${PROJECT_NAME}-cluster \
-  --tasks $(aws ecs list-tasks --cluster ${PROJECT_NAME}-cluster --query 'taskArns' --output text) \
-  --query 'tasks[*].{Service:group,IP:containers[0].networkInterfaces[0].privateIpv4Address}'
+# Verify ECR authentication
+aws ecr get-login-password --region $AWS_REGION | \
+  docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-# Force new deployment
-aws ecs update-service \
-  --cluster ${PROJECT_NAME}-cluster \
-  --service gatewayserver \
-  --force-new-deployment
+# Check image exists
+aws ecr describe-images --repository-name ${PROJECT_NAME}/configserver --region $AWS_REGION
+```
 
-# Scale a service
-aws ecs update-service \
-  --cluster ${PROJECT_NAME}-cluster \
-  --service spot-service \
-  --desired-count 2
+**3. Services can't connect to databases**
+```bash
+# Verify security group allows traffic from EKS nodes
+# Check that database endpoints are correct in ConfigMap
+kubectl describe configmap db-endpoints -n skate-spots
+```
+
+**4. Pod crashes or restarts**
+```bash
+kubectl logs <pod-name> -n skate-spots --previous
 ```
 
 ---
 
-## Cost Optimization Tips
+## Cost Optimization
 
-1. **Use Fargate Spot** for non-critical services (up to 70% savings)
-2. **Stop services** when not in use for demos
-3. **Use smallest instance sizes** (t3.micro for RDS, cache.t3.micro for Redis)
-4. **Delete NAT Gateway** when not needed (costs ~$32/month)
-5. **Set up billing alerts** in AWS Budgets
-
----
-
-## Architecture Diagram
-
-```
-                    ┌─────────────────────────────────────────────────────────────┐
-                    │                         AWS Cloud                            │
-                    │  ┌─────────────────────────────────────────────────────────┐│
-                    │  │                    Public Subnets                        ││
-Internet ──────────►│  │  ┌─────────────┐                                        ││
-                    │  │  │     ALB     │                                        ││
-                    │  │  └──────┬──────┘                                        ││
-                    │  └─────────┼────────────────────────────────────────────────┘│
-                    │            │                                                 │
-                    │  ┌─────────▼────────────────────────────────────────────────┐│
-                    │  │                   Private Subnets                        ││
-                    │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   ││
-                    │  │  │   Gateway    │  │   Keycloak   │  │    Eureka    │   ││
-                    │  │  │    Server    │  │              │  │    Server    │   ││
-                    │  │  └──────┬───────┘  └──────────────┘  └──────────────┘   ││
-                    │  │         │                                                ││
-                    │  │  ┌──────▼───────┬───────────────┬───────────────┐       ││
-                    │  │  │              │               │               │       ││
-                    │  │  │ Spot Service │Skater Service │Session Service│       ││
-                    │  │  │              │               │               │       ││
-                    │  │  └──────┬───────┴───────┬───────┴───────┬───────┘       ││
-                    │  │         │               │               │               ││
-                    │  │  ┌──────▼───────┐┌──────▼───────┐┌──────▼───────┐       ││
-                    │  │  │  RDS Spot    ││ RDS Skater   ││ RDS Session  │       ││
-                    │  │  │  PostgreSQL  ││ PostgreSQL   ││ PostgreSQL   │       ││
-                    │  │  └──────────────┘└──────────────┘└──────┬───────┘       ││
-                    │  │                                         │               ││
-                    │  │                                  ┌──────▼───────┐       ││
-                    │  │                                  │ ElastiCache  │       ││
-                    │  │                                  │    Redis     │       ││
-                    │  │                                  └──────────────┘       ││
-                    │  └──────────────────────────────────────────────────────────┘│
-                    └─────────────────────────────────────────────────────────────┘
-```
+1. **Use t3.small nodes** instead of t3.medium if workload allows
+2. **Shut down cluster** when not in use (delete and recreate)
+3. **Use Fargate for EKS** for serverless nodes (costs only when running)
+4. **Set up auto-scaling** to scale down during low usage
+5. **Monitor costs** with AWS Cost Explorer
 
 ---
 
 ## Next Steps
 
-After successful deployment:
+1. Refer to your textbook for Kubernetes manifest examples
+2. Set up Ingress controller for better routing (NGINX or AWS Load Balancer Controller)
+3. Implement Horizontal Pod Autoscaling
+4. Set up monitoring with Prometheus and Grafana
+5. Configure CI/CD with GitHub Actions
 
-1. **Set up HTTPS** with AWS Certificate Manager
-2. **Configure a custom domain** with Route 53
-3. **Set up CI/CD** with GitHub Actions or AWS CodePipeline
-4. **Enable auto-scaling** for services
-5. **Set up monitoring dashboards** in CloudWatch
