@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: skate-spots
+data:
+  logstash.conf: |
+    input {
+      tcp {
+        port => 5000
+        codec => json
+      }
+    }
+
+    filter {
+      # Add any custom filters here
+      mutate {
+        add_field => { "[@metadata][target_index]" => "logs-%{service_name}-%{+YYYY.MM.dd}" }
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["elasticsearch-master:9200"]
+        index => "%{[@metadata][target_index]}"
+      }
+      stdout {
+        codec => rubydebug
+      }
+    }

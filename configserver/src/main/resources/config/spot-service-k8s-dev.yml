@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    url: "jdbc:postgresql://skate-spots-spot-db.csrum6mwsrv3.us-east-1.rds.amazonaws.com:5432/spot_dev"
+    username: "postgres"
+    password: "SpotDbPassword123!"
+  kafka:
+    bootstrap-servers: kafka:9092
+  main:
+    web-application-type: servlet
+
+eureka:
+  instance:
+    preferIpAddress: true
+  client:
+    registerWithEureka: true
+    fetchRegistry: true
+    serviceUrl:
+      defaultZone: http://eurekaserver:8070/eureka/

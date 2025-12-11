@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-config
+  namespace: skate-spots
+data:
+  kibana.yml: |
+    server.host: "0.0.0.0"
+    server.shutdownTimeout: "5s"
+    elasticsearch.hosts: ["http://elasticsearch-master:9200"]
+    monitoring.ui.container.elasticsearch.enabled: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: skate-spots
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:8.5.1
+        ports:
+        - containerPort: 5601
+          name: http
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch-master:9200"
+        - name: SERVER_HOST
+          value: "0.0.0.0"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: config
+          mountPath: /usr/share/kibana/config/kibana.yml
+          subPath: kibana.yml
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: kibana-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: skate-spots
+spec:
+  type: LoadBalancer
+  selector:
+    app: kibana
+  ports:
+  - port: 5601
+    targetPort: 5601
+    name: http

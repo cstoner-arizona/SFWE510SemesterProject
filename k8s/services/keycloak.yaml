@@ -1,0 +1,279 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: skate-spots
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      volumes:
+        - name: realm-config-volume
+          configMap:
+            name: keycloak-config
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:23.0
+          args:
+            - "start-dev"
+            - "--import-realm"
+          volumeMounts:
+            - name: realm-config-volume
+              mountPath: /opt/keycloak/data/import/realm.json
+              subPath: realm.json
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KEYCLOAK_ADMIN
+              value: "admin"
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: "admin"
+            - name: KC_PROXY
+              value: "edge"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          resources:
+            requests:
+              memory: "1280Mi"
+              cpu: "400m"
+            limits:
+              memory: "1536Mi"
+              cpu: "800m"
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 300
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: skate-spots
+spec:
+  type: LoadBalancer
+  selector:
+    app: keycloak
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-config
+data:
+  realm.json: |
+    {
+      "id": "skate",
+      "realm": "skate",
+      "displayName": "Skate App",
+      "enabled": true,
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": false,
+      "accessTokenLifespan": 3600,
+      "accessTokenLifespanForImplicitFlow": 900,
+      "ssoSessionIdleTimeout": 1800,
+      "ssoSessionMaxLifespan": 36000,
+      "offlineSessionIdleTimeout": 2592000,
+      "offlineSessionMaxLifespanEnabled": false,
+      "offlineSessionMaxLifespan": 5184000,
+      "accessCodeLifespan": 60,
+      "accessCodeLifespanUserAction": 300,
+      "accessCodeLifespanLogin": 1800,
+      "actionTokenGeneratedByAdminLifespan": 43200,
+      "actionTokenGeneratedByUserLifespan": 300,
+      "roles": {
+        "realm": [
+          {
+            "name": "skater",
+            "description": "Regular skater user"
+          },
+          {
+            "name": "admin",
+            "description": "Administrator"
+          }
+        ],
+        "client": {
+          "skate-app": [
+            {
+              "name": "user",
+              "description": "Regular user role"
+            }
+          ]
+        }
+      },
+      "defaultRoles": ["skater"],
+      "clients": [
+        {
+          "clientId": "skate-app",
+          "name": "Skate Application",
+          "description": "Main skate application client",
+          "enabled": true,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "skate-app-secret",
+          "redirectUris": ["*"],
+          "webOrigins": ["*"],
+          "publicClient": false,
+          "protocol": "openid-connect",
+          "directAccessGrantsEnabled": true,
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "fullScopeAllowed": true,
+          "attributes": {
+            "access.token.lifespan": "3600"
+          },
+          "protocolMappers": [
+            {
+              "name": "skater-id-mapper",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "consentRequired": false,
+              "config": {
+                "userinfo.token.claim": "true",
+                "user.attribute": "skaterId",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "skater_id",
+                "jsonType.label": "String"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "id": "650e8400-e29b-41d4-a716-446655440001",
+          "username": "tony_hawk",
+          "email": "tony@skateapp.com",
+          "firstName": "Tony",
+          "lastName": "H",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "password",
+              "temporary": false
+            }
+          ],
+          "realmRoles": ["skater"],
+          "clientRoles": {
+            "skate-app": ["user"]
+          },
+          "attributes": {
+            "skaterId": ["650e8400-e29b-41d4-a716-446655440001"]
+          }
+        },
+        {
+          "id": "650e8400-e29b-41d4-a716-446655440002",
+          "username": "sk8ergirl",
+          "email": "sarah@skateapp.com",
+          "firstName": "Sarah",
+          "lastName": "K",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "password",
+              "temporary": false
+            }
+          ],
+          "realmRoles": ["skater"],
+          "clientRoles": {
+            "skate-app": ["user"]
+          },
+          "attributes": {
+            "skaterId": ["650e8400-e29b-41d4-a716-446655440002"]
+          }
+        },
+        {
+          "id": "650e8400-e29b-41d4-a716-446655440003",
+          "username": "grind_master",
+          "email": "mike@skateapp.com",
+          "firstName": "Mike",
+          "lastName": "R",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "password",
+              "temporary": false
+            }
+          ],
+          "realmRoles": ["skater"],
+          "clientRoles": {
+            "skate-app": ["user"]
+          },
+          "attributes": {
+            "skaterId": ["650e8400-e29b-41d4-a716-446655440003"]
+          }
+        },
+        {
+          "id": "650e8400-e29b-41d4-a716-446655440004",
+          "username": "flip_wizard",
+          "email": "emma@skateapp.com",
+          "firstName": "Emma",
+          "lastName": "L",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "password",
+              "temporary": false
+            }
+          ],
+          "realmRoles": ["skater"],
+          "clientRoles": {
+            "skate-app": ["user"]
+          },
+          "attributes": {
+            "skaterId": ["650e8400-e29b-41d4-a716-446655440004"]
+          }
+        },
+        {
+          "id": "650e8400-e29b-41d4-a716-446655440005",
+          "username": "newbie_skate",
+          "email": "alex@skateapp.com",
+          "firstName": "Alex",
+          "lastName": "T",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "password",
+              "temporary": false
+            }
+          ],
+          "realmRoles": ["skater"],
+          "clientRoles": {
+            "skate-app": ["user"]
+          },
+          "attributes": {
+            "skaterId": ["650e8400-e29b-41d4-a716-446655440005"]
+          }
+        }
+      ]
+    }

@@ -1,0 +1,272 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init-scripts
+  namespace: skate-spots
+data:
+  init-skater.sql: |
+    CREATE TABLE IF NOT EXISTS skaters (
+        skater_id VARCHAR(36) PRIMARY KEY,
+        username VARCHAR(100) NOT NULL UNIQUE,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        display_name VARCHAR(100),
+        bio VARCHAR(160),
+        skill_level VARCHAR(20),
+        stance VARCHAR(10),
+        hometown VARCHAR(100),
+        profile_photo_url VARCHAR(500),
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tricks (
+      skater_id VARCHAR(36) NOT NULL,
+      trick_number INTEGER NOT NULL,
+      name VARCHAR(100) NOT NULL,
+      difficulty INTEGER CHECK (difficulty BETWEEN 1 AND 10),
+      learned_at DATE,
+      PRIMARY KEY (skater_id, trick_number),
+      FOREIGN KEY (skater_id) REFERENCES skaters(skater_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS trick_categories (
+        skater_id VARCHAR(36) NOT NULL,
+        trick_number INTEGER NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        PRIMARY KEY (skater_id, trick_number, category),
+        FOREIGN KEY (skater_id, trick_number) REFERENCES tricks(skater_id, trick_number) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_skaters_username ON skaters(username);
+    CREATE INDEX IF NOT EXISTS idx_tricks_skater_id ON tricks(skater_id);
+    CREATE INDEX IF NOT EXISTS idx_trick_categories_skater_id ON trick_categories(skater_id);
+
+  init-spot.sql: |
+    CREATE TABLE IF NOT EXISTS spots (
+       spot_id VARCHAR(36) PRIMARY KEY,
+       name VARCHAR(255) NOT NULL,
+       founder_skater_id VARCHAR(36) NOT NULL,
+       address VARCHAR(500),
+       latitude DECIMAL(10, 8),
+       longitude DECIMAL(11, 8),
+       difficulty_rating INTEGER CHECK (difficulty_rating BETWEEN 1 AND 10),
+       surface_quality_rating INTEGER CHECK (surface_quality_rating BETWEEN 1 AND 10),
+       description VARCHAR(2000),
+       ideal_skate_time VARCHAR(100),
+       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       updated_at TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS spot_types (
+        spot_id VARCHAR(36) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        FOREIGN KEY (spot_id) REFERENCES spots(spot_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS spot_photos (
+         spot_id VARCHAR(36) NOT NULL,
+         photo_url VARCHAR(500) NOT NULL,
+         FOREIGN KEY (spot_id) REFERENCES spots(spot_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS trick_attempts (
+        id BIGSERIAL PRIMARY KEY,
+        spot_id VARCHAR(36) NOT NULL,
+        skater_id VARCHAR(36) NOT NULL,
+        trick_name VARCHAR(255) NOT NULL,
+        FOREIGN KEY (spot_id) REFERENCES spots(spot_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_spots_founder_skater_id ON spots(founder_skater_id);
+    CREATE INDEX IF NOT EXISTS idx_spot_types_spot_id ON spot_types(spot_id);
+    CREATE INDEX IF NOT EXISTS idx_spot_photos_spot_id ON spot_photos(spot_id);
+    CREATE INDEX IF NOT EXISTS idx_trick_attempts_skater_id ON trick_attempts(skater_id);
+    CREATE INDEX IF NOT EXISTS idx_trick_attempts_spot_id ON trick_attempts(spot_id);
+
+  init-session.sql: |
+    CREATE TABLE IF NOT EXISTS sessions (
+        session_id VARCHAR(36) PRIMARY KEY,
+        skater_id VARCHAR(36) NOT NULL,
+        spot_id VARCHAR(36) NOT NULL,
+        start_time TIMESTAMP NOT NULL,
+        end_time TIMESTAMP,
+        notes VARCHAR(2000),
+        weather VARCHAR(100),
+        rating INTEGER CHECK (rating BETWEEN 1 AND 10),
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS session_tricks (
+        session_id VARCHAR(36) NOT NULL,
+        trick_number INTEGER NOT NULL,
+        trick_name VARCHAR(100) NOT NULL,
+        attempts INTEGER,
+        lands INTEGER,
+        is_new_trick BOOLEAN DEFAULT FALSE,
+        notes VARCHAR(500),
+        timestamp TIMESTAMP,
+        PRIMARY KEY (session_id, trick_number),
+        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_skater_id ON sessions(skater_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_spot_id ON sessions(spot_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_tricks_session_id ON session_tricks(session_id);
+  data-skater.sql: |
+    -- Insert sample skaters (matching the skater_ids used in spot data)
+    INSERT INTO skaters (skater_id, username, email, display_name, bio, skill_level, stance, hometown, profile_photo_url, created_at, updated_at) VALUES
+        ('650e8400-e29b-41d4-a716-446655440001', 'tony_hawk', 'tony@skateapp.com', 'Tony H', 'Just here to shred and have fun!', 'PRO', 'GOOFY', 'San Diego, CA', 'https://example.com/profiles/tony.jpg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        ('650e8400-e29b-41d4-a716-446655440002', 'sk8ergirl', 'sarah@skateapp.com', 'Sarah K', 'Learning new tricks every day', 'INTERMEDIATE', 'REGULAR', 'Los Angeles, CA', 'https://example.com/profiles/sarah.jpg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        ('650e8400-e29b-41d4-a716-446655440003', 'grind_master', 'mike@skateapp.com', 'Mike R', 'Rails and ledges are my jam', 'ADVANCED', 'REGULAR', 'San Francisco, CA', 'https://example.com/profiles/mike.jpg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        ('650e8400-e29b-41d4-a716-446655440004', 'flip_wizard', 'emma@skateapp.com', 'Emma L', 'Flip tricks all day!', 'INTERMEDIATE', 'GOOFY', 'Oakland, CA', 'https://example.com/profiles/emma.jpg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        ('650e8400-e29b-41d4-a716-446655440005', 'newbie_skate', 'alex@skateapp.com', 'Alex T', 'Just started skating, loving it!', 'BEGINNER', 'REGULAR', 'Berkeley, CA', 'https://example.com/profiles/alex.jpg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+    -- Insert sample tricks for skaters (trick_number resets per skater)
+    INSERT INTO tricks (skater_id, trick_number, name, difficulty, learned_at) VALUES
+        -- Tony H tricks (1-4)
+        ('650e8400-e29b-41d4-a716-446655440001', 1, 'Kickflip', 5, '2020-01-15'),
+        ('650e8400-e29b-41d4-a716-446655440001', 2, 'Heelflip', 5, '2020-02-20'),
+        ('650e8400-e29b-41d4-a716-446655440001', 3, '360 Flip', 8, '2020-05-10'),
+        ('650e8400-e29b-41d4-a716-446655440001', 4, 'Backside 180', 4, '2019-11-05'),
+        -- Sarah K tricks (1-3)
+        ('650e8400-e29b-41d4-a716-446655440002', 1, 'Ollie', 3, '2022-03-12'),
+        ('650e8400-e29b-41d4-a716-446655440002', 2, 'Kickflip', 5, '2022-08-20'),
+        ('650e8400-e29b-41d4-a716-446655440002', 3, 'Pop Shove-it', 4, '2022-06-15'),
+        -- Mike R tricks (1-3)
+        ('650e8400-e29b-41d4-a716-446655440003', 1, '50-50 Grind', 6, '2021-04-10'),
+        ('650e8400-e29b-41d4-a716-446655440003', 2, 'Boardslide', 6, '2021-05-22'),
+        ('650e8400-e29b-41d4-a716-446655440003', 3, 'Nosegrind', 7, '2021-07-18'),
+        -- Emma L tricks (1-3)
+        ('650e8400-e29b-41d4-a716-446655440004', 1, 'Kickflip', 5, '2023-01-10'),
+        ('650e8400-e29b-41d4-a716-446655440004', 2, 'Varial Flip', 6, '2023-03-25'),
+        ('650e8400-e29b-41d4-a716-446655440004', 3, 'Hardflip', 7, '2023-06-14'),
+        -- Alex T tricks (1)
+        ('650e8400-e29b-41d4-a716-446655440005', 1, 'Ollie', 3, '2024-11-01');
+
+    -- Insert trick categories (using composite key: skater_id + trick_number)
+    INSERT INTO trick_categories (skater_id, trick_number, category) VALUES
+        -- Tony H trick categories
+        ('650e8400-e29b-41d4-a716-446655440001', 1, 'FLIP'),
+        ('650e8400-e29b-41d4-a716-446655440001', 2, 'FLIP'),
+        ('650e8400-e29b-41d4-a716-446655440001', 3, 'FLIP'),
+        ('650e8400-e29b-41d4-a716-446655440001', 3, 'SPIN'),
+        ('650e8400-e29b-41d4-a716-446655440001', 4, 'SPIN'),
+        -- Sarah K trick categories
+        ('650e8400-e29b-41d4-a716-446655440002', 1, 'FLATGROUND'),
+        ('650e8400-e29b-41d4-a716-446655440002', 2, 'FLIP'),
+        ('650e8400-e29b-41d4-a716-446655440002', 3, 'SPIN'),
+        -- Mike R trick categories
+        ('650e8400-e29b-41d4-a716-446655440003', 1, 'GRIND'),
+        ('650e8400-e29b-41d4-a716-446655440003', 2, 'SLIDE'),
+        ('650e8400-e29b-41d4-a716-446655440003', 3, 'GRIND'),
+        -- Emma L trick categories
+        ('650e8400-e29b-41d4-a716-446655440004', 1, 'FLIP'),
+        ('650e8400-e29b-41d4-a716-446655440004', 2, 'FLIP'),
+        ('650e8400-e29b-41d4-a716-446655440004', 3, 'FLIP'),
+        -- Alex T trick categories
+        ('650e8400-e29b-41d4-a716-446655440005', 1, 'FLATGROUND');
+
+  data-spot.sql: |
+    -- Insert sample spots (using UUID format)
+    INSERT INTO spots (spot_id, name, founder_skater_id, address, latitude, longitude, difficulty_rating, surface_quality_rating, description, ideal_skate_time, created_at) VALUES
+        ('550e8400-e29b-41d4-a716-446655440001', 'Downtown Ledge', '650e8400-e29b-41d4-a716-446655440001', '123 Main St', 37.7749, -122.4194, 7, 9, 'Perfect marble ledge', 'Afternoon', CURRENT_TIMESTAMP),
+        ('550e8400-e29b-41d4-a716-446655440002', 'Skate Park Rails', '650e8400-e29b-41d4-a716-446655440002', '456 Park Ave', 37.7849, -122.4294, 5, 8, 'Multiple rails and boxes', 'Morning', CURRENT_TIMESTAMP);
+
+    -- Insert spot types
+    INSERT INTO spot_types (spot_id, type) VALUES
+       ('550e8400-e29b-41d4-a716-446655440001', 'LEDGE'),
+       ('550e8400-e29b-41d4-a716-446655440001', 'STREET_GAP'),
+       ('550e8400-e29b-41d4-a716-446655440002', 'RAIL'),
+       ('550e8400-e29b-41d4-a716-446655440002', 'PARK');
+
+    -- Insert sample photos
+    INSERT INTO spot_photos (spot_id, photo_url) VALUES
+        ('550e8400-e29b-41d4-a716-446655440001', 'https://example.com/photos/spot1-1.jpg'),
+        ('550e8400-e29b-41d4-a716-446655440001', 'https://example.com/photos/spot1-2.jpg');
+
+    -- Insert sample trick attempts
+    INSERT INTO trick_attempts (spot_id, skater_id, trick_name) VALUES
+        ('550e8400-e29b-41d4-a716-446655440001', '650e8400-e29b-41d4-a716-446655440001', 'Kickflip'),
+        ('550e8400-e29b-41d4-a716-446655440001', '650e8400-e29b-41d4-a716-446655440002', 'Backside 180'),
+        ('550e8400-e29b-41d4-a716-446655440002', '650e8400-e29b-41d4-a716-446655440001', '50-50 Grind');
+
+  data-session.sql: |
+    -- Insert sample sessions (some active, some completed)
+    INSERT INTO sessions (session_id, skater_id, spot_id, start_time, end_time, notes, weather, rating, created_at) VALUES
+        -- Completed sessions
+        ('750e8400-e29b-41d4-a716-446655440001', '650e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', '2024-11-25 14:00:00', '2024-11-25 16:30:00', 'Great session! Landed some clean kickflips', 'Sunny, 72F', 8, '2024-11-25 14:00:00'),
+        ('750e8400-e29b-41d4-a716-446655440002', '650e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440002', '2024-11-26 10:00:00', '2024-11-26 12:00:00', 'Working on rail tricks', 'Cloudy, 65F', 7, '2024-11-26 10:00:00'),
+        ('750e8400-e29b-41d4-a716-446655440003', '650e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440001', '2024-11-27 15:00:00', '2024-11-27 17:00:00', 'Tried some new grind variations', 'Partly cloudy, 68F', 9, '2024-11-27 15:00:00'),
+        ('750e8400-e29b-41d4-a716-446655440004', '650e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440002', '2024-11-28 09:00:00', '2024-11-28 11:30:00', 'Morning session felt good', 'Clear, 60F', 8, '2024-11-28 09:00:00'),
+        -- Active session (no end_time)
+        ('750e8400-e29b-41d4-a716-446655440005', '650e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440002', '2024-12-02 13:00:00', NULL, 'Current session in progress', 'Sunny, 70F', NULL, '2024-12-02 13:00:00');
+
+    -- Insert session tricks (detailed trick attempts during sessions, trick_number resets per session)
+    INSERT INTO session_tricks (session_id, trick_number, trick_name, attempts, lands, is_new_trick, notes, timestamp) VALUES
+        -- Session 1 tricks (1-3)
+        ('750e8400-e29b-41d4-a716-446655440001', 1, 'Kickflip', 15, 12, false, 'Really consistent today', '2024-11-25 14:30:00'),
+        ('750e8400-e29b-41d4-a716-446655440001', 2, 'Heelflip', 10, 7, false, 'Getting better', '2024-11-25 15:00:00'),
+        ('750e8400-e29b-41d4-a716-446655440001', 3, '360 Flip', 8, 2, false, 'Still working on this one', '2024-11-25 16:00:00'),
+
+        -- Session 2 tricks (1-2)
+        ('750e8400-e29b-41d4-a716-446655440002', 1, '50-50 Grind', 12, 8, false, 'Felt smooth', '2024-11-26 10:30:00'),
+        ('750e8400-e29b-41d4-a716-446655440002', 2, 'Boardslide', 10, 5, false, 'Need more practice', '2024-11-26 11:00:00'),
+
+        -- Session 3 tricks (1-3)
+        ('750e8400-e29b-41d4-a716-446655440003', 1, 'Nosegrind', 15, 10, false, 'Locked in nicely', '2024-11-27 15:30:00'),
+        ('750e8400-e29b-41d4-a716-446655440003', 2, 'Feeble Grind', 8, 3, true, 'First time trying this!', '2024-11-27 16:00:00'),
+        ('750e8400-e29b-41d4-a716-446655440003', 3, '50-50 Grind', 12, 11, false, 'Super consistent', '2024-11-27 16:30:00'),
+
+        -- Session 4 tricks (1-3)
+        ('750e8400-e29b-41d4-a716-446655440004', 1, 'Kickflip', 20, 18, false, 'On fire today!', '2024-11-28 09:30:00'),
+        ('750e8400-e29b-41d4-a716-446655440004', 2, 'Varial Flip', 15, 10, false, 'Getting more consistent', '2024-11-28 10:00:00'),
+        ('750e8400-e29b-41d4-a716-446655440004', 3, 'Hardflip', 12, 4, false, 'Still challenging', '2024-11-28 10:45:00'),
+
+        -- Session 5 tricks (1-2) (active session)
+        ('750e8400-e29b-41d4-a716-446655440005', 1, 'Ollie', 10, 9, false, 'Warming up', '2024-12-02 13:15:00'),
+        ('750e8400-e29b-41d4-a716-446655440005', 2, 'Kickflip', 8, 5, false, 'Working on consistency', '2024-12-02 13:30:00');
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-data-loader
+  namespace: skate-spots
+spec:
+  template:
+    spec:
+      containers:
+      - name: postgres-client
+        image: postgres:15
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Creating skater database schema..."
+          PGPASSWORD='SkaterDbPassword123!' psql -h skate-spots-skater-db.csrum6mwsrv3.us-east-1.rds.amazonaws.com -U postgres -d skater_dev -f /scripts/init-skater.sql
+
+          echo "Loading skater data..."
+          PGPASSWORD='SkaterDbPassword123!' psql -h skate-spots-skater-db.csrum6mwsrv3.us-east-1.rds.amazonaws.com -U postgres -d skater_dev -f /scripts/data-skater.sql
+
+          echo "Creating spot database schema..."
+          PGPASSWORD='SpotDbPassword123!' psql -h skate-spots-spot-db.csrum6mwsrv3.us-east-1.rds.amazonaws.com -U postgres -d spot_dev -f /scripts/init-spot.sql
+
+          echo "Loading spot data..."
+          PGPASSWORD='SpotDbPassword123!' psql -h skate-spots-spot-db.csrum6mwsrv3.us-east-1.rds.amazonaws.com -U postgres -d spot_dev -f /scripts/data-spot.sql
+
+          echo "Creating session database schema..."
+          PGPASSWORD='SessionDbPassword123!' psql -h skate-spots-session-db.csrum6mwsrv3.us-east-1.rds.amazonaws.com -U postgres -d session_dev -f /scripts/init-session.sql
+
+          echo "Loading session data..."
+          PGPASSWORD='SessionDbPassword123!' psql -h skate-spots-session-db.csrum6mwsrv3.us-east-1.rds.amazonaws.com -U postgres -d session_dev -f /scripts/data-session.sql
+
+          echo "All schemas created and data loaded successfully!"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: db-init-scripts
+      restartPolicy: Never
+  backoffLimit: 3

@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gatewayserver
+  namespace: skate-spots
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gatewayserver
+  template:
+    metadata:
+      labels:
+        app: gatewayserver
+    spec:
+      containers:
+      - name: gatewayserver
+        image: 165787402199.dkr.ecr.us-east-1.amazonaws.com/skate-spots/gatewayserver:latest
+        ports:
+        - containerPort: 8072
+        env:
+        - name: PROFILE
+          value: "k8s_dev"
+        - name: PORT
+          value: "8072"
+        - name: CONFIGSERVER_URI
+          value: "http://configserver:8089"
+        - name: KEYCLOAK_ISSUER_URI
+          value: "http://ac619da5f050f491f88004378c75d5a3-575866918.us-east-1.elb.amazonaws.com:8080/realms/skate"
+        - name: KEYCLOAK_JWK_URI
+          value: "http://ac619da5f050f491f88004378c75d5a3-575866918.us-east-1.elb.amazonaws.com:8080/realms/skate/protocol/openid-connect/certs"
+        resources:
+          requests:
+            memory: "384Mi"
+            cpu: "150m"
+          limits:
+            memory: "768Mi"
+            cpu: "300m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8072
+          initialDelaySeconds: 120
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8072
+          initialDelaySeconds: 90
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gatewayserver
+  namespace: skate-spots
+spec:
+  type: LoadBalancer
+  selector:
+    app: gatewayserver
+  ports:
+  - port: 8072
+    targetPort: 8072
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gatewayserver-lb
+  namespace: skate-spots
+spec:
+  type: LoadBalancer
+  selector:
+    app: gatewayserver
+  ports:
+  - port: 80
+    targetPort: 8072
+    protocol: TCP

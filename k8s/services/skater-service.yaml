@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skater-service
+  namespace: skate-spots
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skater-service
+  template:
+    metadata:
+      labels:
+        app: skater-service
+    spec:
+      containers:
+        - name: skater-service
+          image: 165787402199.dkr.ecr.us-east-1.amazonaws.com/skate-spots/skater-service:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s-dev"
+            - name: PORT
+              value: "8081"
+            - name: CONFIGSERVER_URI
+              value: "http://configserver:8089"
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "150m"
+            limits:
+              memory: "768Mi"
+              cpu: "300m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 240
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 120
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skater-service
+  namespace: skate-spots
+spec:
+  type: ClusterIP
+  selector:
+    app: skater-service
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
